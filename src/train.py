@@ -5,6 +5,7 @@
 
 import util
 import tensorflow as tf
+import numpy as np
 
 FLAGS = None
 
@@ -45,7 +46,8 @@ if __name__ == '__main__':
     ninputs = tmpspectro.shape[0]
     
     # build input pipeline using a generator
-    train_gen     = makeInputGenerator(datasets['training'][0:10], framesPerWindow, overlapRate)
+    tf.reset_default_graph()
+    train_gen     = makeInputGenerator(datasets['training'], framesPerWindow, overlapRate)
     train_data    = tf.data.Dataset.from_generator(train_gen,
                                                    (tf.int32, tf.float32),
                                                    ([],[nsteps,ninputs]))
@@ -70,6 +72,7 @@ if __name__ == '__main__':
     # Start the training loop
     init_op = tf.global_variables_initializer()
     losses  = []
+    batch_count = 0
     with tf.Session() as sess:
         sess.run(init_op)
         sess.run(iterator.initializer)
@@ -79,6 +82,9 @@ if __name__ == '__main__':
                 try:
                     _ , batch_loss = sess.run([training_op, loss])
                     losses.append(batch_loss)
+                    if batch_count % 100 == 0:
+                        print("Batch {} loss {}".format(batch_count, batch_loss))
+                    batch_count += 1
                 except tf.errors.OutOfRangeError:
                     break
 

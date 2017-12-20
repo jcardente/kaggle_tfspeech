@@ -102,7 +102,8 @@ def readWavFile(fname):
     sampdtype = np.int8 if sampwidth==1 else np.int16
     data = w.readframes(w.getnframes())
     data = np.fromstring(data, dtype = sampdtype)
-    data = data.astype(float) / np.max(np.abs(data))
+    if np.max(np.abs(data)) > 0:
+        data = data.astype(float) / np.max(np.abs(data))
     data = np.reshape(data,(len(data) // nchannels, nchannels))
     w.close()
     return [data, framerate]
@@ -125,14 +126,28 @@ def doFFT(data):
     y = np.absolute(y) * 2.0 / len(data)
     #y = y / np.power(2.0, 8*nsampwidth - 1)
     #y = y / np.sum(y)
-    y = y / np.max(y)
+    if np.max(y) > 0:
+        y = y / np.max(y)
     y = 20 * np.log10(y.clip(mindB)) # clip before log to avoid log10 0 errors
     return y
 
 def calcSpectrogram(fname, windowSize, overlapRate):
    data, framerate = readWavFile(fname)
+   
    Y = [doFFT(x) for x in overlappedWindowIter(data, windowSize, overlapRate)]
-   return np.column_stack(Y), framerate
+   Y = np.column_stack(Y)
+
+   # NB - some audio samples are shorter than 1 sec. pad with zeros   
+   sampsExpected = 1 + (framerate - windowSize) // (windowSize // overlapRate)
+   if Y.shape[1] < sampsExpected:
+       padding = np.ones((Y.shape[0],sampsExpected)) * -120
+       delta   = sampsExpected - Y.shape[1]
+       leftpad = delta // 2
+       padding[:,leftpad:leftpad+Y.shape[1]] = Y
+       Y = padding
+   
+   assert not np.any(np.isnan(Y))
+   return Y, framerate
 
 
 def plotSpectrogram(Y, framerate, framesPerWindow, overlapRate):

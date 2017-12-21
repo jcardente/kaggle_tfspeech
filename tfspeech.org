@@ -10,6 +10,7 @@ Useful links
 - https://lo.calho.st/projects/generating-a-spectrogram-using-numpy/
 - https://kratzert.github.io/2017/06/15/example-of-tensorflows-new-input-pipeline.html
 - http://ischlag.github.io/2016/11/07/tensorflow-input-pipeline-for-large-datasets/
+- http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
 
 * Notes
 ** <2017-12-15 Fri> Pre-processing audio
@@ -182,3 +183,49 @@ for elem in datasets['training']:
 
 Found these files have nans in wav data:
 ../data/train/audio/bird/3e7124ba_nohash_0.wav
+
+** <2017-12-20 Wed> LSTM experiment
+
+#+BEGIN_SRC python
+  import tensorflow as tf
+  data = np.random.random((4,5,10))
+
+  tf.reset_default_graph()
+
+  nhidden = 2
+  input_data = tf.placeholder(tf.float32, [None, 5, 10])
+  batch_data = tf.unstack(tf.transpose(input_data, perm=[1,0,2]))
+  lstm_cell  = tf.contrib.rnn.LSTMCell(num_units=nhidden)
+  output_seqs, states = tf.contrib.rnn.static_rnn(lstm_cell, batch_data, dtype=tf.float32)
+  flat_states = tf.stack(states, axis=1)
+  flat_states = tf.reshape(flat_states, [-1,2*nhidden])
+
+  init_op = tf.global_variables_initializer()
+  sess = tf.InteractiveSession()
+
+  sess.run(init_op)
+  fo, fs, flat = sess.run([output_seqs,states, flat_states], feed_dict={input_data: data})
+
+#+END_SRC
+
+The above produces an output state vector that is has a single dimension per batch
+** <2017-12-21 Thu> MFCC experiment
+
+
+Experimenting with calculating MFCC's for the speech signature
+
+#+BEGIN_SRC python
+import numpy as np
+import matplotlib.pyplot as plt
+from python_speech_features import mfcc
+import util
+
+fname = '../data/train/audio/sheila/1fe4c891_nohash_1.wav'
+data, samprate = util.readWavFile(fname)
+xx = util.doMFCC(data, samprate)
+
+t = np.arange(0.01,1,0.01)
+f = np.arange(xx.shape[1])
+
+plt.pcolormesh(t,f, np.transpose(xx))
+#+END_SRC

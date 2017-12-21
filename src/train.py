@@ -14,7 +14,7 @@ FLAGS = None
 framesPerWindow      = 512
 overlapRate          = 4
 validationPercentage = 5
-numEpochs             = 1
+numEpochs             = 3
 learningRate          = 0.001
 batchSize             = 32
 
@@ -27,8 +27,20 @@ def makeInputGenerator(dataset, framesPerWindow, overlapRate):
             yield label, np.transpose(data).astype(np.float32)
     return gen
 
+def dynamicRNN(batch_data, noutputs):
+    basic_cell = tf.contrib.rnn.BasicRNNCell(num_units=100)
+    outputs, states = tf.nn.dynamic_rnn(basic_cell, batch_data, dtype=tf.float32)
+    logits = tf.layers.dense(states, noutputs)
+    return logits
 
 
+def staticRNN(batch_data, noutputs):
+    X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
+    basic_cell = tf.contrib.rnn.BasicRNNCell(num_units=1000)
+    output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
+    logits = tf.layers.dense(states, noutputs)
+    return logits
+    
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -56,7 +68,7 @@ if __name__ == '__main__':
         train_data    = tf.data.Dataset.from_generator(train_gen,
                                                        (tf.int32, tf.float32),
                                                        ([],[nsteps,ninputs]))
-        #train_data    = train_data.shuffle(buffer_size=1000)
+        train_data    = train_data.shuffle(buffer_size=1000)
         train_data    = train_data.batch(batchSize)
 
 
@@ -69,25 +81,22 @@ if __name__ == '__main__':
 
         
         # Reinitializable iterator
-        #iterator = train_data.make_initializable_iterator()
         iterator = tf.data.Iterator.from_structure(train_data.output_types, train_data.output_shapes)
         batch_labels, batch_data = iterator.get_next()
 
         train_init_op = iterator.make_initializer(train_data)
         val_init_op   = iterator.make_initializer(val_data)
-
         
     # Build the model
     with tf.device("/gpu:0"):
-        basic_cell = tf.contrib.rnn.BasicRNNCell(num_units=100)
-        outputs, states = tf.nn.dynamic_rnn(basic_cell, batch_data, dtype=tf.float32)
-        logits = tf.layers.dense(states, noutputs)
+        #logits = dynamicRNN(batch_data, noutputs)
+        logits = staticRNN(batch_data, noutputs)
+
+    with tf.device("/cpu:0"):
         xentropy = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss = tf.reduce_mean(xentropy)
         optimizer = tf.train.AdamOptimizer(learning_rate = learningRate)
-        training_op = optimizer.minimize(loss)
-
-    with tf.device("/cpu:0"):
+        training_op = optimizer.minimize(loss)        
         correct = tf.nn.in_top_k(logits, batch_labels, 1)
         accuracy = tf.reduce_mean(tf.cast(correct, tf.float32))
 
@@ -98,9 +107,9 @@ if __name__ == '__main__':
     batch_count = 0
     with tf.Session() as sess:
         sess.run(init_op)
-        sess.run(train_init_op)
-        for epoch in range(numEpochs):
+        for epoch in range(numEpochs):            
             print("Epoch " + str(epoch))
+            sess.run(train_init_op)            
             while True:
                 try:
                     _ , batch_loss = sess.run([training_op, loss])
@@ -127,7 +136,7 @@ if __name__ == '__main__':
                 batch_correct, batch_accuracy = sess.run([correct, accuracy])
                 numCorrect += np.sum(batch_correct)
                 numTotal   += len(batch_correct)
-                if batch_count % 100 == 0:
+                if batch_count % 10 == 0:
                     print("Batch {} accuracy {}".format(batch_count, batch_accuracy))
                 batch_count += 1
             except tf.errors.OutOfRangeError:

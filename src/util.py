@@ -6,6 +6,7 @@ from os.path import join, isfile, isdir
 import numpy as np
 import wave
 from scipy.signal import hanning
+from python_speech_features import mfcc
 import matplotlib.pyplot as plt
 import matplotlib.ticker
 
@@ -118,7 +119,8 @@ def overlappedWindowIter(data, windowSize, overlapRate):
                     return
             yield window * weights
             start += stepsz
-                
+
+
 def doFFT(data):
     mindB = np.power(10.0, -120/20)  # Lowest signal level in dB
     y = np.fft.rfft(data)
@@ -165,3 +167,23 @@ def plotSpectrogram(Y, framerate, framesPerWindow, overlapRate):
     cbar = plt.colorbar()
     cbar.set_label("Intensity (dB)")
     plt.show()
+
+def doMFCC(data, sampRate):
+    return mfcc(data, sampRate, winfunc = hanning)
+
+
+def calcMFCC(fname):
+   data, samprate = readWavFile(fname)
+
+   # Some of the training files are short,
+   # pad them with zeros
+   if len(data) < samprate:
+       pad = np.zeros((samprate,1))
+       start = (len(pad)-len(data))//2
+       pad[start:start+len(data)] = data
+       data = pad
+       
+   Y = doMFCC(data, samprate).transpose()
+   assert not np.any(np.isnan(Y))
+   return Y, samprate
+

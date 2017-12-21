@@ -18,23 +18,12 @@ numEpochs            = 5
 learningRate         = 0.001
 batchSize            = 32
 
-def makeInputGenerator(dataset, framesPerWindow, overlapRate):
-    def gen():
-        for elem in dataset:
-            label = np.array(elem['label'], dtype=np.int16)
-            fname = elem['file']
-            #data, _ = util.calcSpectrogram(fname, framesPerWindow, overlapRate)
-            #data, _  = util.calcMFCC(fname)
-            data = util.doMFCC(elem['data'],elem['samprate'])
-            yield label, np.transpose(data).astype(np.float32)
-    return gen
 
 def dynamicRNN(batch_data, noutputs, nhidden):
     basic_cell = tf.contrib.rnn.BasicRNNCell(num_units=nhidden)
     outputs, states = tf.nn.dynamic_rnn(basic_cell, batch_data, dtype=tf.float32)
     logits = tf.layers.dense(states, noutputs)
     return logits
-
 
 def staticRNN(batch_data, noutputs, nhidden):
     X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
@@ -73,15 +62,15 @@ if __name__ == '__main__':
     #tmpspectro, _ = util.calcSpectrogram(datasets['training'][0][1], framesPerWindow, overlapRate)
     #tmpspectro, _ = util.calcMFCC(datasets['training'][0]['file'])
     tmpspectro = util.doMFCC(datasets['training'][0]['data'], datasets['training'][0]['samprate'])       
-    nsteps  = tmpspectro.shape[1]
-    ninputs = tmpspectro.shape[0]
+    nsteps  = tmpspectro.shape[0]
+    ninputs = tmpspectro.shape[1]
     
     # build input pipeline using a generator
     tf.reset_default_graph()
 
     with tf.device("/cpu:0"):
         # Training data set
-        train_gen     = makeInputGenerator(datasets['training'][0:3200], framesPerWindow, overlapRate)
+        train_gen     = util.makeInputGenerator(datasets['training'][0:3200])
         train_data    = tf.data.Dataset.from_generator(train_gen,
                                                        (tf.int32, tf.float32),
                                                        ([],[nsteps,ninputs]))
@@ -90,26 +79,24 @@ if __name__ == '__main__':
 
 
         # Validation data set
-        #val_gen     = makeInputGenerator(datasets['validation'], framesPerWindow, overlapRate)
-        val_gen     = makeInputGenerator(datasets['training'][0:3200], framesPerWindow, overlapRate)
+        #val_gen     = makeInputGenerator(datasets['validation'])
+        val_gen     = util.makeInputGenerator(datasets['training'][0:3200])
         val_data    = tf.data.Dataset.from_generator(val_gen,
                                                        (tf.int32, tf.float32),
                                                        ([],[nsteps,ninputs]))
         val_data    = val_data.batch(batchSize)
 
-        
         # Reinitializable iterator
         iterator = tf.data.Iterator.from_structure(train_data.output_types, train_data.output_shapes)
         batch_labels, batch_data = iterator.get_next()
-
         train_init_op = iterator.make_initializer(train_data)
         val_init_op   = iterator.make_initializer(val_data)
         
     # Build the model
     with tf.device("/gpu:0"):
         #logits = dynamicRNN(batch_data, noutputs, 100)
-        #logits = staticRNN(batch_data, noutputs, 100)
-        logits      = staticLSTM(batch_data, noutputs, 10)
+        logits = staticRNN(batch_data, noutputs, 10)
+        #logits      = staticLSTM(batch_data, noutputs, 10)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy)
         optimizer   = tf.train.AdamOptimizer(learning_rate = learningRate)

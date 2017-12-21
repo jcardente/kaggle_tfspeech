@@ -113,7 +113,18 @@ def datasetLoadData(datasets):
             entry['data'] = data
             entry['samprate'] = samprate
     
+def makeInputGenerator(dataset):
+    def gen():
+        for elem in dataset:
+            label = np.array(elem['label'], dtype=np.int16)
+            fname = elem['file']
+            data = doMFCC(elem['data'],elem['samprate'])
+            yield label, data.astype(np.float32)
+    return gen
 
+
+
+            
 # Wav preprocessing code heavily inspired by
 # https://github.com/le1ca/spectrogram
 

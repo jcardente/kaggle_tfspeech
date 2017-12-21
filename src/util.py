@@ -62,35 +62,57 @@ def which_set(filename, validation_percentage, testing_percentage):
     return result 
 
 
-def splitTrainData(audioPath, validationPercentage):
+def datasetBuildIndex(audioPath, validationPercentage):
     labels = [x for x in listdir(audioPath) if isdir(join(audioPath,x)) and x[0] != '_']
     datasets = {'training': [],
                 'testing': [],
-                'validation': []}
+                'validation': [],
+                '_background_noise_': []}
     for label in listdir(audioPath):
-        if (not isdir(join(audioPath,label))) or label == '_background_noise_':
+        if (not isdir(join(audioPath,label))):
             continue
 
         labelPath = join(audioPath,label)
         for fname in listdir(join(audioPath,label)):
             fpath = join(labelPath, fname)
-            if not isfile(fpath):
+            if not(fname.endswith('.wav') and isfile(fpath)):
                 continue
 
             # Train or Validation?
-            setname = which_set(fname, validationPercentage, 0)
-            datasets[setname].append((labels.index(label), fpath))
+            if  label != '_background_noise_':
+                setname = which_set(fname, validationPercentage, 0)
+                label_val = labels.index(label)
+            else:
+                setname = label
+                label_val = -1
+            datasets[setname].append({'label': label_val, 'file':fpath})
                 
     return labels, datasets
-    
-def splitLabelsData(datasetTuples):
-    labels = []
-    filenames = []
-    for dt in datasetTuples:
-        labels.append(dt[0])
-        filenames.append(dt[1])
-    return labels, filenames
 
+
+def datasetLoadData(datasets):
+    for setname in datasets.keys():
+        isBackground = setname == '_background_noise_'
+        for entry in datasets[setname]:
+            fname = entry['file']
+            data, samprate = readWavFile(fname)
+
+            if not isBackground:
+                # NB - some audio files are less than one second long
+                #      pad or truncate as necessary
+               if len(data) < samprate:
+                   pad = np.zeros((samprate,1))
+                   start = (len(pad)-len(data))//2
+                   pad[start:start+len(data)] = data
+                   data = pad
+
+               if len(data) > samprate:
+                   start = (len(data) - samprate)//2
+                   data = data[start:start+samprate]
+
+            entry['data'] = data
+            entry['samprate'] = samprate
+    
 
 # Wav preprocessing code heavily inspired by
 # https://github.com/le1ca/spectrogram
@@ -172,18 +194,4 @@ def doMFCC(data, sampRate):
     return mfcc(data, sampRate, winfunc = hanning)
 
 
-def calcMFCC(fname):
-   data, samprate = readWavFile(fname)
-
-   # Some of the training files are short,
-   # pad them with zeros
-   if len(data) < samprate:
-       pad = np.zeros((samprate,1))
-       start = (len(pad)-len(data))//2
-       pad[start:start+len(data)] = data
-       data = pad
-       
-   Y = doMFCC(data, samprate).transpose()
-   assert not np.any(np.isnan(Y))
-   return Y, samprate
 

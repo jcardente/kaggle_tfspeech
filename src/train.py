@@ -3,10 +3,12 @@
 #
 # Train a RNN solution for the Kaggle TF Speech challenge
 import argparse
-import util
 import tensorflow as tf
 import numpy as np
 import time
+
+import util
+import models
 
 FLAGS = None
 
@@ -16,31 +18,8 @@ overlapRate          = 4
 validationPercentage = 5
 numEpochs            = 5
 learningRate         = 0.001
-batchSize            = 32
+batchSize            = 64
 
-
-def dynamicRNN(batch_data, noutputs, nhidden):
-    basic_cell = tf.contrib.rnn.BasicRNNCell(num_units=nhidden)
-    outputs, states = tf.nn.dynamic_rnn(basic_cell, batch_data, dtype=tf.float32)
-    logits = tf.layers.dense(states, noutputs)
-    return logits
-
-def staticRNN(batch_data, noutputs, nhidden):
-    X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
-    basic_cell = tf.contrib.rnn.BasicRNNCell(num_units=nhidden)
-    output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
-    logits = tf.layers.dense(states, noutputs)
-    return logits
-
-def staticLSTM(batch_data, noutputs, nhidden):
-    X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
-    basic_cell = tf.contrib.rnn.LSTMCell(num_units=nhidden, use_peepholes=True)
-    output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
-    flat_states = tf.stack(states, axis=1)
-    flat_states = tf.reshape(flat_states, [-1,2*nhidden])
-    logits = tf.layers.dense(flat_states, noutputs)
-    return logits
-    
 
 if __name__ == '__main__':
 
@@ -69,77 +48,94 @@ if __name__ == '__main__':
     tf.reset_default_graph()
 
     with tf.device("/cpu:0"):
+
+        # Store labels in graph for inference
+        class_labels = tf.constant(labels, dtype=tf.string, name="class_labels")
+        
         # Training data set
-        train_gen     = util.makeInputGenerator(datasets['training'][0:3200])
+        train_gen     = util.makeInputGenerator(datasets['training'])
         train_data    = tf.data.Dataset.from_generator(train_gen,
-                                                       (tf.int32, tf.float32),
-                                                       ([],[nsteps,ninputs]))
+                                                       (tf.string, tf.int32, tf.float32),
+                                                       ([],[],[nsteps,ninputs]))
         train_data    = train_data.shuffle(buffer_size=3200)
         train_data    = train_data.batch(batchSize)
 
-
         # Validation data set
         #val_gen     = makeInputGenerator(datasets['validation'])
-        val_gen     = util.makeInputGenerator(datasets['training'][0:3200])
+        val_gen     = util.makeInputGenerator(datasets['validation'])
         val_data    = tf.data.Dataset.from_generator(val_gen,
-                                                       (tf.int32, tf.float32),
-                                                       ([],[nsteps,ninputs]))
+                                                       (tf.string, tf.int32, tf.float32),
+                                                       ([], [],[nsteps,ninputs]))
         val_data    = val_data.batch(batchSize)
 
-        # Reinitializable iterator
-        iterator = tf.data.Iterator.from_structure(train_data.output_types, train_data.output_shapes)
-        batch_labels, batch_data = iterator.get_next()
-        train_init_op = iterator.make_initializer(train_data)
-        val_init_op   = iterator.make_initializer(val_data)
+        # Create feedable iterator
+        #iterator = tf.data.Iterator.from_structure(train_data.output_types, train_data.output_shapes, shared_name='input_iterator')
+        #train_init_op = iterator.make_initializer(train_data)
+        #val_init_op   = iterator.make_initializer(val_data)
+        
+        iterator_handle = tf.placeholder(tf.string, shape=[], name='iterator_handle')
+        iterator = tf.data.Iterator.from_string_handle(iterator_handle,train_data.output_types, train_data.output_shapes)
+        batch_fnames, batch_labels, batch_data = iterator.get_next()
+
+        train_iterator = train_data.make_initializable_iterator()
+        val_iterator   = val_data.make_initializable_iterator()
         
     # Build the model
     with tf.device("/gpu:0"):
         #logits = dynamicRNN(batch_data, noutputs, 100)
-        logits = staticRNN(batch_data, noutputs, 10)
-        #logits      = staticLSTM(batch_data, noutputs, 10)
+        logits = models.staticRNN(batch_data, noutputs, 10)
+        #logits      = models.staticLSTM(batch_data, noutputs, 10)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
-        loss        = tf.reduce_mean(xentropy)
+        loss        = tf.reduce_mean(xentropy, name = "loss")
         optimizer   = tf.train.AdamOptimizer(learning_rate = learningRate)
         training_op = optimizer.minimize(loss)
-        
-    with tf.device("/cpu:0"):        
+    
+    with tf.device("/cpu:0"):
+        # Accuracy
         correct     = tf.nn.in_top_k(logits, batch_labels, 1)
         accuracy    = tf.reduce_mean(tf.cast(correct, tf.float32))
 
+        # Prediction
+        smax = tf.nn.softmax(logits)
+        prediction = tf.argmax(smax,1, name = "prediction")
+        clipnames  = tf.identity(batch_fnames, name="clipnames")
+        predClasses = tf.gather(class_labels, prediction, name="predicted_classes")
+        
     # Start the training loop
-    #saver       = tf.train.Saver()    
+    saver       = tf.train.Saver()    
     init_op     = tf.global_variables_initializer()
     losses      = []
     batch_count = 0
     with tf.Session() as sess:
         sess.run(init_op)
+        train_handle = sess.run(train_iterator.string_handle())
         for epoch in range(numEpochs):            
             print("Epoch " + str(epoch))
-            sess.run(train_init_op)            
+            sess.run(train_iterator.initializer)
             while True:
                 try:
-                    _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy])
+                    _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={iterator_handle: train_handle})
                     losses.append(batch_loss)
                     if batch_count % 100 == 0:
                         print("Batch {} loss {} accuracy {}".format(batch_count, batch_loss, batch_accuracy))
                     batch_count += 1
                 except tf.errors.OutOfRangeError:
                     break
-        ckptName = './tmp/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
-        #print("Saving parameters to file {}".format(ckptName))
-        #save_path = saver.save(sess, ckptName)
-
+        ckptName = './chkpoints/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
+        print("Saving parameters to file {}".format(ckptName))
+        save_path = saver.save(sess, ckptName)
                 
         # Now do validation
         print("Starting validation....")
         #sess.run(val_init_op)
-        sess.run(train_init_op)
+        val_handle = sess.run(val_iterator.string_handle())
+        sess.run(val_iterator.initializer)
         numCorrect  = 0
         numTotal    = 0
         batch_count = 0
         while True:
             try:
-                batch_correct, batch_accuracy = sess.run([correct, accuracy])
+                batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={iterator_handle: val_handle})
                 numCorrect += np.sum(batch_correct)
                 numTotal   += len(batch_correct)
                 if batch_count % 10 == 0:

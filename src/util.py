@@ -119,7 +119,7 @@ def makeInputGenerator(dataset):
             label = np.array(elem['label'], dtype=np.int16)
             fname = elem['file']
             data = doMFCC(elem['data'],elem['samprate'])
-            yield label, data.astype(np.float32)
+            yield fname.encode('utf-8'), label, data.astype(np.float32)
     return gen
 
 

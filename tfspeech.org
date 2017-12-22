@@ -11,6 +11,8 @@ Useful links
 - https://kratzert.github.io/2017/06/15/example-of-tensorflows-new-input-pipeline.html
 - http://ischlag.github.io/2016/11/07/tensorflow-input-pipeline-for-large-datasets/
 - http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
+- https://stackoverflow.com/questions/46917588/restoring-a-tensorflow-model-that-uses-iterators
+- http://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
 
 * Notes
 ** <2017-12-15 Fri> Pre-processing audio

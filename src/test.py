@@ -12,7 +12,7 @@ batchSize = 64
 def datasetTestBuildDataset(audioPath):
     dataset = []
     testFiles = listdir(audioPath)
-    for fname in testFiles[0:2000]:
+    for fname in testFiles:
         fpath = join(audioPath, fname)        
         if not(fname.endswith('.wav') and isfile(fpath)):
             continue
@@ -97,7 +97,7 @@ if __name__ == '__main__':
                   test_results.extend([(n,p) for n,p in zip(names, pred)])
                   count += 1
                   if (count % 1000) == 0:
-                     print("    {}  completed".format(count))
+                     print("    {}  batches completed".format(count))
               except tf.errors.OutOfRangeError:
                   break
 

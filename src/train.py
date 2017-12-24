@@ -16,7 +16,7 @@ FLAGS = None
 framesPerWindow      = 512
 overlapRate          = 4
 validationPercentage = 5
-numEpochs            = 5
+numEpochs            = 8
 learningRate         = 0.001
 batchSize            = 64
 
@@ -83,12 +83,13 @@ if __name__ == '__main__':
     # Build the model
     with tf.device("/gpu:0"):
         #logits = dynamicRNN(batch_data, noutputs, 100)
-        logits = models.staticRNN(batch_data, noutputs, 10)
-        #logits      = models.staticLSTM(batch_data, noutputs, 10)
+        #logits = models.staticRNN(batch_data, noutputs, 10)
+        logits      = models.staticLSTM(batch_data, noutputs, 50)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         optimizer   = tf.train.AdamOptimizer(learning_rate = learningRate)
         training_op = optimizer.minimize(loss)
+        class_probs = tf.nn.softmax(logits)
     
     with tf.device("/cpu:0"):
         # Accuracy
@@ -96,8 +97,7 @@ if __name__ == '__main__':
         accuracy    = tf.reduce_mean(tf.cast(correct, tf.float32))
 
         # Prediction
-        smax = tf.nn.softmax(logits)
-        prediction = tf.argmax(smax,1, name = "prediction")
+        prediction = tf.argmax(class_probs,1, name = "prediction")
         clipnames  = tf.identity(batch_fnames, name="clipnames")
         predClasses = tf.gather(class_labels, prediction, name="predicted_classes")
         
@@ -114,7 +114,7 @@ if __name__ == '__main__':
             sess.run(train_iterator.initializer)
             while True:
                 try:
-                    _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={iterator_handle: train_handle})
+                    _ , batch_loss, batch_accuracy, blabels, bpreds, bclasses = sess.run([training_op, loss, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: train_handle})
                     losses.append(batch_loss)
                     if batch_count % 100 == 0:
                         print("Batch {} loss {} accuracy {}".format(batch_count, batch_loss, batch_accuracy))
@@ -130,21 +130,28 @@ if __name__ == '__main__':
         #sess.run(val_init_op)
         val_handle = sess.run(val_iterator.string_handle())
         sess.run(val_iterator.initializer)
-        numCorrect  = 0
-        numTotal    = 0
-        batch_count = 0
+        numCorrect   = 0
+        numTotal     = 0
+        checkCorrect = 0
+        checkTotal   = 0
+        batch_count  = 0
         while True:
             try:
-                batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={iterator_handle: val_handle})
+                batch_correct, batch_accuracy, blabels, bpreds, bclasses = sess.run([correct, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: val_handle})
                 numCorrect += np.sum(batch_correct)
                 numTotal   += len(batch_correct)
+                cumAccuracy = numCorrect / numTotal
+                  
+                checkCorrect += np.sum(np.equal(blabels, bpreds))
+                checkTotal += len(bpreds)
+                checkAccuracy = checkCorrect/checkTotal                                
                 if batch_count % 10 == 0:
-                    print("Batch {} accuracy {}".format(batch_count, batch_accuracy))
+                    print("Batch {} Batch Accuracy {} Accum {} Check {}".format(batch_count, batch_accuracy, cumAccuracy, checkAccuracy))
                 batch_count += 1
             except tf.errors.OutOfRangeError:
                 break
 
-    print("Validation Correct: {}  Total: {}".format(numCorrect, numTotal))
+    print("Validation Correct: {}  Total: {} Accuracy {} Check: {}".format(numCorrect, numTotal, numCorrect/numTotal, checkCorrect/checkTotal))
 
 
 

@@ -63,7 +63,8 @@ def which_set(filename, validation_percentage, testing_percentage):
 
 
 def datasetBuildIndex(audioPath, validationPercentage):
-    labels = [x for x in listdir(audioPath) if isdir(join(audioPath,x)) and x[0] != '_']
+    labels = ['unknown', 'silence']
+    labels.extend([x for x in listdir(audioPath) if isdir(join(audioPath,x)) and x[0] != '_'])
     datasets = {'training': [],
                 'testing': [],
                 'validation': [],
@@ -72,12 +73,13 @@ def datasetBuildIndex(audioPath, validationPercentage):
         if (not isdir(join(audioPath,label))):
             continue
 
+        
         labelPath = join(audioPath,label)
         for fname in listdir(join(audioPath,label)):
             fpath = join(labelPath, fname)
             if not(fname.endswith('.wav') and isfile(fpath)):
                 continue
-
+            
             # Train or Validation?
             if  label != '_background_noise_':
                 setname = which_set(fname, validationPercentage, 0)
@@ -85,6 +87,7 @@ def datasetBuildIndex(audioPath, validationPercentage):
             else:
                 setname = label
                 label_val = -1
+
             datasets[setname].append({'label': label_val, 'file':fpath})
                 
     return labels, datasets

@@ -13,6 +13,8 @@ Useful links
 - http://haythamfayek.com/2016/04/21/speech-processing-for-machine-learning.html
 - https://stackoverflow.com/questions/46917588/restoring-a-tensorflow-model-that-uses-iterators
 - http://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
+- https://www.tensorflow.org/versions/master/tutorials/audio_recognition
+- http://www.isca-speech.org/archive/interspeech_2015/papers/i15_1478.pdf
 
 * Notes
 ** <2017-12-15 Fri> Pre-processing audio
@@ -231,3 +233,86 @@ f = np.arange(xx.shape[1])
 
 plt.pcolormesh(t,f, np.transpose(xx))
 #+END_SRC
+** <2017-12-27 Wed> Reviewing TFlow example
+
+Looking over the tensorflow speech command example
+https://www.tensorflow.org/versions/master/tutorials/audio_recognition
+
+
+Input data augmentation
+- Uknown: draw 10% from labeled data outside list of target words
+- Silence: draw 10% from background noise samples
+- Background noise: mix background noise into training
+  samples. Randomly adjust volume (0 to 1) and mix frequency.
+- Time shifting: randomly shift training samples by up to 100ms, pad
+  space with zeros
+
+
+File that defines various models
+https://github.com/tensorflow/tensorflow/blob/master/tensorflow/examples/speech_commands/models.py
+
+Code that prepares the model parameters
+
+#+BEGIN_SRC python
+def prepare_model_settings(label_count, sample_rate, clip_duration_ms,
+                           window_size_ms, window_stride_ms,
+                           dct_coefficient_count):
+  """Calculates common settings needed for all models.
+  Args:
+    label_count: How many classes are to be recognized.
+    sample_rate: Number of audio samples per second.
+    clip_duration_ms: Length of each audio clip to be analyzed.
+    window_size_ms: Duration of frequency analysis window.
+    window_stride_ms: How far to move in time between frequency windows.
+    dct_coefficient_count: Number of frequency bins to use for analysis.
+  Returns:
+    Dictionary containing common settings.
+  """
+  desired_samples = int(sample_rate * clip_duration_ms / 1000)
+  window_size_samples = int(sample_rate * window_size_ms / 1000)
+  window_stride_samples = int(sample_rate * window_stride_ms / 1000)
+  length_minus_window = (desired_samples - window_size_samples)
+  if length_minus_window < 0:
+    spectrogram_length = 0
+  else:
+    spectrogram_length = 1 + int(length_minus_window / window_stride_samples)
+  fingerprint_size = dct_coefficient_count * spectrogram_length
+  return {
+      'desired_samples': desired_samples,
+      'window_size_samples': window_size_samples,
+      'window_stride_samples': window_stride_samples,
+      'spectrogram_length': spectrogram_length,
+      'dct_coefficient_count': dct_coefficient_count,
+      'fingerprint_size': fingerprint_size,
+      'label_count': label_count,
+      'sample_rate': sample_rate,
+  }
+#+END_SRC
+
+default values
+
+| Parameter             |                                    Default |
+|-----------------------+--------------------------------------------|
+| Background Volume     |                                        0.1 |
+| Background Freq       |                                        0.8 |
+| Silence Percentage    |                                       10.0 |
+| Unknown Percentage    |                                       10.0 |
+| Time shift max        |                                    100.0ms |
+| Test Percentage       |                                         10 |
+| Validation Percentage |                                         10 |
+| Sample Rate           |                                      16000 |
+| Clip duration         |                                     1000ms |
+| Window Size           |                                       30ms |
+| Window Stride         |                                       10ms |
+| DCT Coefficient Count |                                         40 |
+| Training steps        |                                 15000,3000 |
+| Eval interval         |                                        400 |
+| Learning rate         |                              0.001, 0.0001 |
+| Batch size            |                                        100 |
+| Wanted words          | 'yes,no,up,down,left,right,on,off,stop,go' |
+| Save interval         |                                        100 |
+| Model architecture    |                                       conv |
+| Check nans            |                                      False |
+
+
+

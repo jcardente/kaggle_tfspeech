@@ -13,13 +13,21 @@ import models
 FLAGS = None
 
 # DEFAULT PARAMETERS
-framesPerWindow      = 512
-overlapRate          = 4
+#framesPerWindow      = 512
+#overlapRate          = 4
+
+numSamples           = 16000
 validationPercentage = 5
+unknownPercentage    = 10
+silencePercentage    = 10
 numEpochs            = 8
 learningRate         = 0.001
 batchSize            = 64
+targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
+mfccWindowLen        = 30.0/1000
+mfccWindowStride     = 10.0/1000
+mfccNumCep           = 20
 
 if __name__ == '__main__':
 
@@ -29,18 +37,23 @@ if __name__ == '__main__':
                         help='Directory containing audio files')
     FLAGS, unparsed = parser.parse_known_args()
 
-    # Build dataset of labels and filenames
+    # labels
+    labels = ['unknown','silence'] + targetWords
+    noutputs = len(labels)
+    
+    # Build training data set
     audioPath = FLAGS.audioDir
     print('Indexing datasets.....')
-    labels, datasets = util.datasetBuildIndex(audioPath, validationPercentage)
-    noutputs = len(labels)
+    trainIndex = util.dataTrainIndex(audioPath, targetWords, validationPercentage)
+    trainData  = util.dataTrainBuild(trainIndex, unknownPercentage, silencePercentage)
     print('Loading audio data...')
-    util.datasetLoadData(datasets)
+    util.dataTrainLoad(trainData, numSamples)
+
     
     # parse one audio file to get types and dimensions
     #tmpspectro, _ = util.calcSpectrogram(datasets['training'][0][1], framesPerWindow, overlapRate)
     #tmpspectro, _ = util.calcMFCC(datasets['training'][0]['file'])
-    tmpspectro = util.doMFCC(datasets['training'][0]['data'], datasets['training'][0]['samprate'])       
+    tmpspectro = util.doMFCC(trainData['training'][1]['data'], trainData['training'][1]['samprate'], mfccWindowLen, mfccWindowStride, mfccNumCep)
     nsteps  = tmpspectro.shape[0]
     ninputs = tmpspectro.shape[1]
     

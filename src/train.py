@@ -1,7 +1,7 @@
 #------------------------------------------------------------
 # train.py
 #
-# Train a RNN solution for the Kaggle TF Speech challenge
+# Solution for the Kaggle TF Speech challenge
 import argparse
 import tensorflow as tf
 import numpy as np
@@ -25,18 +25,21 @@ FLAGS = None
 targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
 PARAMS = {
+    'numEpochs': 8,
+    'learningRate': 0.001,
+    'batchSize': 128,    
     'sampRate': 16000,
     'numSamples': 16000,
+    'trainLimitInput': None,
+    'trainShuffleSize': 3200,
     'validationPercentage': 5,
     'unknownPercentage': 10,
     'silencePercentage': 10,
+    'silenceFileName':   '_silence_',
     'maxShiftSamps': int(16000/100),
     'backgroundLabel': '_background_noise_',
     'backgroundMinVol': 0.1,    
     'backgroundMaxVol': 0.5,
-    'numEpochs': 8,
-    'learningRate': 0.001,
-    'batchSize': 128,
     'mfccWindowLen':  30.0/1000,
     'mfccWindowStride': 10.0/1000,     
     'mfccNumCep': 20
@@ -83,7 +86,7 @@ if __name__ == '__main__':
         train_data    = tf.data.Dataset.from_generator(train_gen,
                                                        (tf.string, tf.int32, tf.float32),
                                                        ([],[],[nsteps,ninputs]))
-        train_data    = train_data.shuffle(buffer_size=3200)
+        train_data    = train_data.shuffle(buffer_size=PARAMS['trainShuffleSize'])
         train_data    = train_data.batch(PARAMS['batchSize'])
 
         # Validation data set
@@ -102,7 +105,8 @@ if __name__ == '__main__':
         val_iterator   = val_data.make_initializable_iterator()
         
     # Build the model
-    with tf.device("/gpu:0"):
+    #with tf.device("/gpu:0"):
+    with tf.device("/cpu:0"):
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
         logits      = models.staticLSTM(batch_data, noutputs, 50)

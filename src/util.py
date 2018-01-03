@@ -92,13 +92,19 @@ def dataTrainBuild(index, labels, PARAMS):
     trainData = {}
     l2i = {l:i for i,l in enumerate(labels)}
     for setname in index['targets'].keys():
-        setsize = len(index['targets'][setname])
-        unksize = int(math.ceil(setsize * PARAMS['unknownPercentage'] / 100))
-        silsize = int(math.ceil(setsize * PARAMS['silencePercentage'] / 100))
-
         trainData[setname] = index['targets'][setname][:]
+        if PARAMS['trainLimitInput']:
+            # When testing input pipeline code, don't load the full
+            # training data set
+            trainData[setname] = trainData[setname][:PARAMS['trainLimitInput']]
+            
         for entry in trainData[setname]:
             entry['label'] = l2i[entry['label']]
+
+
+        setsize = len(trainData[setname])
+        unksize = int(math.ceil(setsize * PARAMS['unknownPercentage'] / 100))
+        silsize = int(math.ceil(setsize * PARAMS['silencePercentage'] / 100))
         
         random.shuffle(index['unknown'][setname])
         unks = index['unknown'][setname][:unksize]
@@ -108,7 +114,7 @@ def dataTrainBuild(index, labels, PARAMS):
         trainData[setname].extend(unks)
 
         silLabel = l2i['silence']
-        sils = [{'label': silLabel, 'file': None}] * silsize
+        sils = [{'label': silLabel, 'file': PARAMS['silenceFileName']}] * silsize
         trainData[setname].extend(sils)
 
         random.shuffle(trainData[setname])
@@ -122,9 +128,8 @@ def dataTrainLoad(trainData, PARAMS):
         for entry in trainData[setname]:
             fname = entry['file']
             data  = []
-            if fname:
+            if fname != PARAMS['silenceFileName']:
                 data, samprate = readWavFile(fname)
-                fname = '_silence_'
             else:
                 data = np.zeros((numSamples,1))
 
@@ -154,7 +159,8 @@ def dataTrainShift(data, maxShiftSamps):
         shift *= -1
         shifted[:(len(data)-shift),:] = data[shift:,:]
     return shifted
-        
+
+
 def dataBackgroundLoad(audioPath, PARAMS):
     backgrounds = []
     backgroundPath = join(audioPath, PARAMS['backgroundLabel'])
@@ -165,7 +171,8 @@ def dataBackgroundLoad(audioPath, PARAMS):
         data, samprate = readWavFile(fpath)
         backgrounds.append(data)
     return backgrounds
-            
+
+
 def dataBackgroundMixin(data, backgrounds, PARAMS):
     minvol = PARAMS['backgroundMinVol']
     maxvol = PARAMS['backgroundMaxVol']

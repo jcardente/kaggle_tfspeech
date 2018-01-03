@@ -316,3 +316,31 @@ default values
 
 
 
+** <2018-01-03 Wed> Augmentation experiments
+
+Testing augmentation code
+
+#+BEGIN_SRC python
+maxShiftSamps = int(16000/10)
+fname = '../data/train/audio/off/483e2a6f_nohash_2.wav'
+
+data, sr = util.readWavFile(fname)
+shifted  = util.dataTrainShift(data, maxShiftSamps)
+
+def plotshifted(data, shifted):
+    plt.subplot(2,1,1)
+    plt.plot(data)
+    plt.subplot(2,1,2)
+    plt.plot(shifted)
+    plt.show()
+
+backgrounds = util.dataBackgroundLoad('../data/train/audio', PARAMS)
+
+
+ for i in range(20):
+     bgmix = util.dataBackgroundMixin(data, backgrounds, PARAMS)
+     sd.play(bgmix, 16000)
+     sd.wait()
+
+
+#+END_SRC

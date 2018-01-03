@@ -30,8 +30,10 @@ PARAMS = {
     'validationPercentage': 5,
     'unknownPercentage': 10,
     'silencePercentage': 10,
-    'maxShiftSamps': 16000/100,
-    'maxBackgroundVol': 0.3,
+    'maxShiftSamps': int(16000/100),
+    'backgroundLabel': '_background_noise_',
+    'backgroundMinVol': 0.1,    
+    'backgroundMaxVol': 0.5,
     'numEpochs': 8,
     'learningRate': 0.001,
     'batchSize': 64,
@@ -60,7 +62,7 @@ if __name__ == '__main__':
 
     print('Loading audio data...')
     util.dataTrainLoad(trainData, PARAMS)
-    backgrounds = util.dataBackgroundLoad(audioPath)
+    backgrounds = util.dataBackgroundLoad(audioPath, PARAMS)
     
     # parse one audio file to get types and dimensions
     #tmpspectro, _ = util.calcSpectrogram(datasets['training'][0][1], framesPerWindow, overlapRate)

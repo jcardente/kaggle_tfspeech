@@ -88,7 +88,7 @@ def dataTrainIndex(audioPath, targetWords, PARAMS):
     return index
 
 
-def dataTrainBuild(index, labels, PARAMS) 
+def dataTrainBuild(index, labels, PARAMS):
     trainData = {}
     l2i = {l:i for i,l in enumerate(labels)}
     for setname in index['targets'].keys():
@@ -97,7 +97,7 @@ def dataTrainBuild(index, labels, PARAMS)
         silsize = int(math.ceil(setsize * PARAMS['silencePercentage'] / 100))
 
         trainData[setname] = index['targets'][setname][:]
-        for entry in trainData:
+        for entry in trainData[setname]:
             entry['label'] = l2i[entry['label']]
         
         random.shuffle(index['unknown'][setname])
@@ -147,27 +147,31 @@ def dataTrainShift(data, maxShiftSamps):
     shift = random.randint(-1*maxShiftSamps, maxShiftSamps)
     shifted = np.zeros(data.shape)
     if shift >= 0:
-        shifted[shift:] = data[:(len(data)-shift)]
+        shifted[shift:,:] = data[:(len(data)-shift),:]
     else:
-        shifted[:(len(data)-shift)] = data[shift:]
+        shift *= -1
+        shifted[:(len(data)-shift),:] = data[shift:,:]
     return shifted
         
-def dataBackgroundLoad(audioPath):
+def dataBackgroundLoad(audioPath, PARAMS):
     backgrounds = []
-    for fname in listdir(join(audioPath,'_background_')):
-        fpath = join(labelPath, fname)
+    backgroundPath = join(audioPath, PARAMS['backgroundLabel'])
+    for fname in listdir(backgroundPath):
+        fpath = join(backgroundPath, fname)
         if not(fname.endswith('.wav') and isfile(fpath)):
             continue
         data, samprate = readWavFile(fpath)
         backgrounds.append(data)
     return backgrounds
             
-def dataBackgroundMixin(data, backgrounds, maxvol):
+def dataBackgroundMixin(data, backgrounds, PARAMS):
+    minvol = PARAMS['backgroundMinVol']
+    maxvol = PARAMS['backgroundMaxVol']
     if len(backgrounds) == 0:
         return data
     bg      = random.choice(backgrounds)
     bgstart = random.randrange(len(bg)-len(data))
-    bgvol   = random.random() * maxvol
+    bgvol   = random.uniform(minvol, maxvol)
     mixed   = (1.0-bgvol)*data + bgvol*bg[bgstart:(bgstart+len(data))]
     return mixed
     
@@ -180,8 +184,8 @@ def makeInputGenerator(dataset, doAugment, backgrounds, PARAMS):
             data  = elem['data']
             samprate = elem['samprate']
             if doAugment:
-                data = dataTrainShift(data, PARAMS['maxShiftSamps']))
-                data  = dataBackgroundMixin(data, backgrounds, PARAMS['maxBackgroundvol'])
+                data = dataTrainShift(data, PARAMS['maxShiftSamps'])
+                data = dataBackgroundMixin(data, backgrounds, PARAMS)
             
             features = doMFCC(elem['data'],elem['samprate'], PARAMS)
             yield fname, label, features.astype(np.float32)

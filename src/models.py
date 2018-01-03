@@ -19,5 +19,6 @@ def staticLSTM(batch_data, noutputs, nhidden):
     output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
     flat_states = tf.stack(states, axis=1)
     flat_states = tf.reshape(flat_states, [-1,2*nhidden])
+    fc1   =  tf.layers.dense(flat_states, nhidden)
     logits = tf.layers.dense(flat_states, noutputs)
     return logits

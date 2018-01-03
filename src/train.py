@@ -36,7 +36,7 @@ PARAMS = {
     'backgroundMaxVol': 0.5,
     'numEpochs': 8,
     'learningRate': 0.001,
-    'batchSize': 64,
+    'batchSize': 128,
     'mfccWindowLen':  30.0/1000,
     'mfccWindowStride': 10.0/1000,     
     'mfccNumCep': 20
@@ -79,7 +79,7 @@ if __name__ == '__main__':
         class_labels = tf.constant(labels, dtype=tf.string, name="class_labels")
         
         # Training data set
-        train_gen     = util.makeInputGenerator(datasets['training'], True, backgrounds, PARAMS)
+        train_gen     = util.makeInputGenerator(trainData['training'], True, backgrounds, PARAMS)
         train_data    = tf.data.Dataset.from_generator(train_gen,
                                                        (tf.string, tf.int32, tf.float32),
                                                        ([],[],[nsteps,ninputs]))
@@ -88,7 +88,7 @@ if __name__ == '__main__':
 
         # Validation data set
         #val_gen     = makeInputGenerator(datasets['validation'])
-        val_gen     = util.makeInputGenerator(datasets['validation'], False, None, PARAMS)
+        val_gen     = util.makeInputGenerator(trainData['validation'], False, None, PARAMS)
         val_data    = tf.data.Dataset.from_generator(val_gen,
                                                        (tf.string, tf.int32, tf.float32),
                                                        ([], [],[nsteps,ninputs]))

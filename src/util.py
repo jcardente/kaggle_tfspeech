@@ -124,6 +124,7 @@ def dataTrainLoad(trainData, PARAMS):
             data  = []
             if fname:
                 data, samprate = readWavFile(fname)
+                fname = '_silence_'
             else:
                 data = np.zeros((numSamples,1))
 
@@ -141,6 +142,7 @@ def dataTrainLoad(trainData, PARAMS):
 
             entry['data']     = data
             entry['samprate'] = numSamples
+            entry['fname']    = fname
 
 
 def dataTrainShift(data, maxShiftSamps):

@@ -13,21 +13,32 @@ import models
 FLAGS = None
 
 # DEFAULT PARAMETERS
-#framesPerWindow      = 512
-#overlapRate          = 4
-
-numSamples           = 16000
-validationPercentage = 5
-unknownPercentage    = 10
-silencePercentage    = 10
-numEpochs            = 8
-learningRate         = 0.001
-batchSize            = 64
+# framesPerWindow      = 512
+# overlapRate          = 4
+# numSamples           = 16000
+# validationPercentage = 5
+# unknownPercentage    = 10
+# silencePercentage    = 10
+# numEpochs            = 8
+# learningRate         = 0.001
+# batchSize            = 64
 targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
-mfccWindowLen        = 30.0/1000
-mfccWindowStride     = 10.0/1000
-mfccNumCep           = 20
+PARAMS = {
+    'sampRate': 16000,
+    'numSamples': 16000,
+    'validationPercentage': 5,
+    'unknownPercentage': 10,
+    'silencePercentage': 10,
+    'maxShiftSamps': 16000/100,
+    'maxBackgroundVol': 0.3,
+    'numEpochs': 8,
+    'learningRate': 0.001,
+    'batchSize': 64,
+    'mfccWindowLen':  30.0/1000,
+    'mfccWindowStride': 10.0/1000,     
+    'mfccNumCep': 20
+    }
 
 if __name__ == '__main__':
 
@@ -44,48 +55,43 @@ if __name__ == '__main__':
     # Build training data set
     audioPath = FLAGS.audioDir
     print('Indexing datasets.....')
-    trainIndex = util.dataTrainIndex(audioPath, targetWords, validationPercentage)
-    trainData  = util.dataTrainBuild(trainIndex, unknownPercentage, silencePercentage)
-    print('Loading audio data...')
-    util.dataTrainLoad(trainData, numSamples)
+    trainIndex = util.dataTrainIndex(audioPath, targetWords, PARAMS) 
+    trainData  = util.dataTrainBuild(trainIndex, labels, PARAMS) 
 
+    print('Loading audio data...')
+    util.dataTrainLoad(trainData, PARAMS)
+    backgrounds = util.dataBackgroundLoad(audioPath)
     
     # parse one audio file to get types and dimensions
     #tmpspectro, _ = util.calcSpectrogram(datasets['training'][0][1], framesPerWindow, overlapRate)
     #tmpspectro, _ = util.calcMFCC(datasets['training'][0]['file'])
-    tmpspectro = util.doMFCC(trainData['training'][1]['data'], trainData['training'][1]['samprate'], mfccWindowLen, mfccWindowStride, mfccNumCep)
-    nsteps  = tmpspectro.shape[0]
-    ninputs = tmpspectro.shape[1]
+    tmpfeatures = util.doMFCC(trainData['training'][0]['data'], trainData['training'][0]['samprate'], PARAMS)
+    nsteps  = tmpfeatures.shape[0]
+    ninputs = tmpfeatures.shape[1]
     
     # build input pipeline using a generator
     tf.reset_default_graph()
 
     with tf.device("/cpu:0"):
-
         # Store labels in graph for inference
         class_labels = tf.constant(labels, dtype=tf.string, name="class_labels")
         
         # Training data set
-        train_gen     = util.makeInputGenerator(datasets['training'])
+        train_gen     = util.makeInputGenerator(datasets['training'], True, backgrounds, PARAMS)
         train_data    = tf.data.Dataset.from_generator(train_gen,
                                                        (tf.string, tf.int32, tf.float32),
                                                        ([],[],[nsteps,ninputs]))
         train_data    = train_data.shuffle(buffer_size=3200)
-        train_data    = train_data.batch(batchSize)
+        train_data    = train_data.batch(PARAMS['batchSize'])
 
         # Validation data set
         #val_gen     = makeInputGenerator(datasets['validation'])
-        val_gen     = util.makeInputGenerator(datasets['validation'])
+        val_gen     = util.makeInputGenerator(datasets['validation'], False, None, PARAMS)
         val_data    = tf.data.Dataset.from_generator(val_gen,
                                                        (tf.string, tf.int32, tf.float32),
                                                        ([], [],[nsteps,ninputs]))
-        val_data    = val_data.batch(batchSize)
+        val_data    = val_data.batch(PARAMS['batchSize'])
 
-        # Create feedable iterator
-        #iterator = tf.data.Iterator.from_structure(train_data.output_types, train_data.output_shapes, shared_name='input_iterator')
-        #train_init_op = iterator.make_initializer(train_data)
-        #val_init_op   = iterator.make_initializer(val_data)
-        
         iterator_handle = tf.placeholder(tf.string, shape=[], name='iterator_handle')
         iterator = tf.data.Iterator.from_string_handle(iterator_handle,train_data.output_types, train_data.output_shapes)
         batch_fnames, batch_labels, batch_data = iterator.get_next()
@@ -100,7 +106,7 @@ if __name__ == '__main__':
         logits      = models.staticLSTM(batch_data, noutputs, 50)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
-        optimizer   = tf.train.AdamOptimizer(learning_rate = learningRate)
+        optimizer   = tf.train.AdamOptimizer(learning_rate = PARAMS['learningRate'])
         training_op = optimizer.minimize(loss)
         class_probs = tf.nn.softmax(logits)
     
@@ -113,16 +119,19 @@ if __name__ == '__main__':
         prediction = tf.argmax(class_probs,1, name = "prediction")
         clipnames  = tf.identity(batch_fnames, name="clipnames")
         predClasses = tf.gather(class_labels, prediction, name="predicted_classes")
+
         
-    # Start the training loop
+    # Start session for training and validation
     saver       = tf.train.Saver()    
     init_op     = tf.global_variables_initializer()
     losses      = []
     batch_count = 0
     with tf.Session() as sess:
         sess.run(init_op)
+
+        # Training loop
         train_handle = sess.run(train_iterator.string_handle())
-        for epoch in range(numEpochs):            
+        for epoch in range(PARAMS['numEpochs']):            
             print("Epoch " + str(epoch))
             sess.run(train_iterator.initializer)
             while True:
@@ -135,12 +144,10 @@ if __name__ == '__main__':
                 except tf.errors.OutOfRangeError:
                     break
         ckptName = './chkpoints/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
-        print("Saving parameters to file {}".format(ckptName))
         save_path = saver.save(sess, ckptName)
                 
-        # Now do validation
+        # Validation loop
         print("Starting validation....")
-        #sess.run(val_init_op)
         val_handle = sess.run(val_iterator.string_handle())
         sess.run(val_iterator.initializer)
         numCorrect   = 0
@@ -164,7 +171,9 @@ if __name__ == '__main__':
             except tf.errors.OutOfRangeError:
                 break
 
-    print("Validation Correct: {}  Total: {} Accuracy {} Check: {}".format(numCorrect, numTotal, numCorrect/numTotal, checkCorrect/checkTotal))
+            
+        print("Validation Correct: {}  Total: {} Accuracy {} Check: {}".format(numCorrect, numTotal, numCorrect/numTotal, checkCorrect/checkTotal))
+        print("Model saved to file {}".format(ckptName))
 
 
 

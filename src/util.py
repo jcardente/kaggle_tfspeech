@@ -64,7 +64,7 @@ def which_set(filename, validation_percentage, testing_percentage):
     return result 
 
 
-def dataTrainIndex(audioPath, targetWords, valRatio):
+def dataTrainIndex(audioPath, targetWords, PARAMS):
     index = {'targets': {'training': [], 'validation': [], 'testing': []},
              'unknown': {'training': [], 'validation': [], 'testing': []}}
     for label in listdir(audioPath):
@@ -81,30 +81,34 @@ def dataTrainIndex(audioPath, targetWords, valRatio):
                 continue
 
             # Train or Validation?
-            setname  = which_set(fname, valRatio, 0)
+            setname  = which_set(fname, PARAMS['validationPercentage'], 0)
             typename = 'targets' if label in targetWords else 'unknown'
             index[typename][setname].append({'label': label, 'file':fpath})
                 
     return index
 
 
-def dataTrainBuild(index, unknownRatio, silenceRatio):
+def dataTrainBuild(index, labels, PARAMS) 
     trainData = {}
+    l2i = {l:i for i,l in enumerate(labels)}
     for setname in index['targets'].keys():
         setsize = len(index['targets'][setname])
-        unksize = int(math.ceil(setsize * unknownRatio / 100))
-        silsize = int(math.ceil(setsize * silenceRatio / 100))
+        unksize = int(math.ceil(setsize * PARAMS['unknownPercentage'] / 100))
+        silsize = int(math.ceil(setsize * PARAMS['silencePercentage'] / 100))
 
-        trainData[setname] = []
-        trainData[setname].extend(index['targets'][setname])
+        trainData[setname] = index['targets'][setname][:]
+        for entry in trainData:
+            entry['label'] = l2i[entry['label']]
         
         random.shuffle(index['unknown'][setname])
         unks = index['unknown'][setname][:unksize]
+        unkLabel = l2i['unknown']
         for unk in unks:
-            unk['label'] = 'unknown'
+            unk['label'] = unkLabel
         trainData[setname].extend(unks)
 
-        sils = [{'label': 'silence', 'file': None}] * silsize
+        silLabel = l2i['silence']
+        sils = [{'label': silLabel, 'file': None}] * silsize
         trainData[setname].extend(sils)
 
         random.shuffle(trainData[setname])
@@ -112,7 +116,8 @@ def dataTrainBuild(index, unknownRatio, silenceRatio):
     return trainData
 
 
-def dataTrainLoad(trainData, numSamples):
+def dataTrainLoad(trainData, PARAMS):
+    numSamples = PARAMS['numSamples']
     for setname in trainData.keys():
         for entry in trainData[setname]:
             fname = entry['file']
@@ -122,7 +127,7 @@ def dataTrainLoad(trainData, numSamples):
             else:
                 data = np.zeros((numSamples,1))
 
-            # NB - some audio files are less than one second long
+            # NB - some audio files are not exactly one second long
             #      pad or truncate as necessary
             if len(data) < numSamples:
                pad = np.zeros((numSamples,1))
@@ -138,14 +143,48 @@ def dataTrainLoad(trainData, numSamples):
             entry['samprate'] = numSamples
 
 
+def dataTrainShift(data, maxShiftSamps):
+    shift = random.randint(-1*maxShiftSamps, maxShiftSamps)
+    shifted = np.zeros(data.shape)
+    if shift >= 0:
+        shifted[shift:] = data[:(len(data)-shift)]
+    else:
+        shifted[:(len(data)-shift)] = data[shift:]
+    return shifted
+        
+def dataBackgroundLoad(audioPath):
+    backgrounds = []
+    for fname in listdir(join(audioPath,'_background_')):
+        fpath = join(labelPath, fname)
+        if not(fname.endswith('.wav') and isfile(fpath)):
+            continue
+        data, samprate = readWavFile(fpath)
+        backgrounds.append(data)
+    return backgrounds
             
-def makeInputGenerator(dataset):
+def dataBackgroundMixin(data, backgrounds, maxvol):
+    if len(backgrounds) == 0:
+        return data
+    bg      = random.choice(backgrounds)
+    bgstart = random.randrange(len(bg)-len(data))
+    bgvol   = random.random() * maxvol
+    mixed   = (1.0-bgvol)*data + bgvol*bg[bgstart:(bgstart+len(data))]
+    return mixed
+    
+
+def makeInputGenerator(dataset, doAugment, backgrounds, PARAMS):
     def gen():
         for elem in dataset:
             label = np.array(elem['label'], dtype=np.int16)
-            fname = elem['file']
-            data = doMFCC(elem['data'],elem['samprate'])
-            yield fname.encode('utf-8'), label, data.astype(np.float32)
+            fname = elem['file'].encode('utf-8')
+            data  = elem['data']
+            samprate = elem['samprate']
+            if doAugment:
+                data = dataTrainShift(data, PARAMS['maxShiftSamps']))
+                data  = dataBackgroundMixin(data, backgrounds, PARAMS['maxBackgroundvol'])
+            
+            features = doMFCC(elem['data'],elem['samprate'], PARAMS)
+            yield fname, label, features.astype(np.float32)
     return gen
 
 
@@ -227,8 +266,14 @@ def plotSpectrogram(Y, framerate, framesPerWindow, overlapRate):
     cbar.set_label("Intensity (dB)")
     plt.show()
 
-def doMFCC(data, sampRate, winlen, winstep, numcep):
+    
+def doMFCC(data, sampRate, PARAMS):
+    winlen  = PARAMS['mfccWindowLen']
+    winstep = PARAMS['mfccWindowStride']
+    numcep  = PARAMS['mfccNumCep']    
     mfccCoefs = mfcc(data, sampRate, nfilt=2*numcep, winlen=winlen, winstep=winstep, numcep=numcep)
+
+    # NB - don't return the first MFCC coefficient
     return mfccCoefs[:,1:]
 
 

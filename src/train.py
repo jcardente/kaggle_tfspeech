@@ -28,12 +28,12 @@ targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off',
 PARAMS = {
 #    'numEpochs': 8,
     'learningRates': [0.001,0.0001],
-    'numEpochs': [6,2],
-    'batchSize': 128,    
+    'numEpochs': [14,4],
+    'batchSize': 512,    
     'sampRate': 16000,
     'numSamples': 16000,
     'trainLimitInput': None,
-    'trainShuffleSize': 3200,
+    'trainShuffleSize': 5000,
     'validationPercentage': 5,
     'unknownPercentage': 10,
     'silencePercentage': 10,
@@ -88,7 +88,8 @@ if __name__ == '__main__':
         train_data    = tf.data.Dataset.from_generator(train_gen,
                                                        (tf.string, tf.int32, tf.float32),
                                                        ([],[],[nsteps,ninputs]))
-        train_data    = train_data.shuffle(buffer_size=PARAMS['trainShuffleSize'])
+        #train_data    = train_data.shuffle(buffer_size=PARAMS['trainShuffleSize'])
+        train_data    = train_data.prefetch(PARAMS['trainShuffleSize'])
         train_data    = train_data.batch(PARAMS['batchSize'])
 
         # Validation data set
@@ -110,14 +111,16 @@ if __name__ == '__main__':
     with tf.device("/gpu:0"):
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
-        logits      = models.staticLSTM(batch_data, noutputs, 50)
+        #logits      = models.staticLSTM(batch_data, noutputs, 50)
+        logits      = models.staticGRUBlock(batch_data, noutputs, 50)        
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
         optimizer   = tf.train.AdamOptimizer(learning_rate = learning_rate)
         training_op = optimizer.minimize(loss)
         class_probs = tf.nn.softmax(logits)
-    
+
+        
     with tf.device("/cpu:0"):
         # Accuracy
         correct     = tf.nn.in_top_k(logits, batch_labels, 1)
@@ -132,9 +135,8 @@ if __name__ == '__main__':
     # Start session for training and validation
     saver       = tf.train.Saver()    
     init_op     = tf.global_variables_initializer()
-    losses      = []
     batchCount = 0
-    batchReportInterval = 100
+    batchReportInterval = 10
     epochLearningRate = 0.001
     with tf.Session() as sess:
         sess.run(init_op)
@@ -155,12 +157,11 @@ if __name__ == '__main__':
             timeStart = timer()
             while True:
                 try:
-                    _ , batch_loss, batch_accuracy, blabels, bpreds, bclasses = sess.run([training_op, loss, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: train_handle, learning_rate: epochLearningRate})
-                    losses.append(batch_loss)
+                    _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={iterator_handle: train_handle, learning_rate: epochLearningRate})
                     if batchCount % batchReportInterval == 0:
                         timeEnd = timer()
-                        batchRate = float(batchReportInterval) / (timeEnd - timeStart)
-                        print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, batchRate))
+                        trainRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
+                        print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, trainRate))
                         timeStart = timer()
                     batchCount += 1
                 except tf.errors.OutOfRangeError:

@@ -186,17 +186,30 @@ def dataBackgroundMixin(data, backgrounds, PARAMS):
     
 
 def makeInputGenerator(dataset, doAugment, backgrounds, PARAMS):
-    def gen():
+    epochData = []
+    if doAugment:
         for elem in dataset:
+            label = elem['label']
+            fname = elem['file']
+            data  = elem['data']
+            samprate = elem['samprate']
+            data = dataTrainShift(data, PARAMS['maxShiftSamps'])
+            data = dataBackgroundMixin(data, backgrounds, PARAMS)
+            epochData.append({'file': fname, 'label': label, 'samprate': samprate, 'data': data})
+    else:
+        epochData = dataset
+        
+    def gen():
+        for elem in epochData:
             label = np.array(elem['label'], dtype=np.int16)
             fname = elem['file'].encode('utf-8')
             data  = elem['data']
             samprate = elem['samprate']
-            if doAugment:
-                data = dataTrainShift(data, PARAMS['maxShiftSamps'])
-                data = dataBackgroundMixin(data, backgrounds, PARAMS)
+            # if doAugment:
+            #     data = dataTrainShift(data, PARAMS['maxShiftSamps'])
+            #     data = dataBackgroundMixin(data, backgrounds, PARAMS)
             
-            features = doMFCC(elem['data'],elem['samprate'], PARAMS)
+            features = doMFCC(data,samprate, PARAMS)
             yield fname, label, features.astype(np.float32)
     return gen
 

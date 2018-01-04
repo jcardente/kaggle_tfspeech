@@ -205,7 +205,6 @@ def inputGenerator(dataset, doAugment, backgrounds, PARAMS):
     epochSize  = len(epochData)
     batchStart = 0
     batchSize  = PARAMS['batchSize'] 
-
     while batchStart < epochSize:
         batch = epochData[batchStart:(batchStart+batchSize)]
         batchStart += batchSize            

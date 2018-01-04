@@ -6,6 +6,7 @@ import argparse
 import tensorflow as tf
 import numpy as np
 import time
+from timeit import default_timer as timer
 
 import util
 import models
@@ -131,7 +132,8 @@ if __name__ == '__main__':
     saver       = tf.train.Saver()    
     init_op     = tf.global_variables_initializer()
     losses      = []
-    batch_count = 0
+    batchCount = 0
+    batchReportInterval = 100
     with tf.Session() as sess:
         sess.run(init_op)
 
@@ -140,13 +142,17 @@ if __name__ == '__main__':
         for epoch in range(PARAMS['numEpochs']):            
             print("Epoch " + str(epoch))
             sess.run(train_iterator.initializer)
+            timeStart = timer()
             while True:
                 try:
                     _ , batch_loss, batch_accuracy, blabels, bpreds, bclasses = sess.run([training_op, loss, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: train_handle})
                     losses.append(batch_loss)
-                    if batch_count % 100 == 0:
-                        print("Batch {} loss {} accuracy {}".format(batch_count, batch_loss, batch_accuracy))
-                    batch_count += 1
+                    if batchCount % batchReportInterval == 0:
+                        timeEnd = timer()
+                        batchRate = float(batchReportInterval) / (timeEnd - timeStart)
+                        print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, batchRate))
+                        timeStart = timer()
+                    batchCount += 1
                 except tf.errors.OutOfRangeError:
                     break
         ckptName = './chkpoints/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
@@ -160,7 +166,7 @@ if __name__ == '__main__':
         numTotal     = 0
         checkCorrect = 0
         checkTotal   = 0
-        batch_count  = 0
+        batchCount  = 0
         while True:
             try:
                 batch_correct, batch_accuracy, blabels, bpreds, bclasses = sess.run([correct, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: val_handle})
@@ -171,9 +177,9 @@ if __name__ == '__main__':
                 checkCorrect += np.sum(np.equal(blabels, bpreds))
                 checkTotal += len(bpreds)
                 checkAccuracy = checkCorrect/checkTotal                                
-                if batch_count % 10 == 0:
-                    print("Batch {} Batch Accuracy {} Accum {} Check {}".format(batch_count, batch_accuracy, cumAccuracy, checkAccuracy))
-                batch_count += 1
+                if batchCount % 10 == 0:
+                    print("Batch {} Batch Accuracy {} Accum {} Check {}".format(batchCount, batch_accuracy, cumAccuracy, checkAccuracy))
+                batchCount += 1
             except tf.errors.OutOfRangeError:
                 break
 

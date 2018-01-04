@@ -26,8 +26,9 @@ FLAGS = None
 targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
 PARAMS = {
-    'numEpochs': 8,
-    'learningRate': 0.001,
+#    'numEpochs': 8,
+    'learningRates': [0.001,0.0001],
+    'numEpochs': [6,2],
     'batchSize': 128,    
     'sampRate': 16000,
     'numSamples': 16000,
@@ -106,14 +107,14 @@ if __name__ == '__main__':
         val_iterator   = val_data.make_initializable_iterator()
         
     # Build the model
-    #with tf.device("/gpu:0"):
-    with tf.device("/cpu:0"):
+    with tf.device("/gpu:0"):
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
         logits      = models.staticLSTM(batch_data, noutputs, 50)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
-        optimizer   = tf.train.AdamOptimizer(learning_rate = PARAMS['learningRate'])
+        learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
+        optimizer   = tf.train.AdamOptimizer(learning_rate = learning_rate)
         training_op = optimizer.minimize(loss)
         class_probs = tf.nn.softmax(logits)
     
@@ -134,18 +135,27 @@ if __name__ == '__main__':
     losses      = []
     batchCount = 0
     batchReportInterval = 100
+    epochLearningRate = 0.001
     with tf.Session() as sess:
         sess.run(init_op)
 
         # Training loop
         train_handle = sess.run(train_iterator.string_handle())
-        for epoch in range(PARAMS['numEpochs']):            
+        for epoch in range(sum(PARAMS['numEpochs'])):            
             print("Epoch " + str(epoch))
+
+            tmpCount = 0
+            for i in range(len(PARAMS['numEpochs'])):
+                tmpCount += PARAMS['numEpochs'][i]
+                if epoch < tmpCount:
+                    epochLearningRate = PARAMS['learningRates'][i]
+                    break
+            
             sess.run(train_iterator.initializer)
             timeStart = timer()
             while True:
                 try:
-                    _ , batch_loss, batch_accuracy, blabels, bpreds, bclasses = sess.run([training_op, loss, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: train_handle})
+                    _ , batch_loss, batch_accuracy, blabels, bpreds, bclasses = sess.run([training_op, loss, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: train_handle, learning_rate: epochLearningRate})
                     losses.append(batch_loss)
                     if batchCount % batchReportInterval == 0:
                         timeEnd = timer()

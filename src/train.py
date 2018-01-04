@@ -17,12 +17,11 @@ targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off',
 
 PARAMS = {
     'learningRates': [0.001,0.0001],
-    'numEpochs': [2,2],
+    'numEpochs': [1,1],
     'batchSize': 512,    
     'sampRate': 16000,
     'numSamples': 16000,
-    'trainLimitInput': 100,
-    'trainShuffleSize': 5000,
+    'trainLimitInput': None,
     'validationPercentage': 5,
     'unknownPercentage': 10,
     'silencePercentage': 10,
@@ -61,7 +60,9 @@ if __name__ == '__main__':
     trainData  = util.dataTrainBuild(trainIndex, labels, PARAMS) 
     util.dataTrainLoad(trainData, PARAMS)
     backgrounds = util.dataBackgroundLoad(audioPath, PARAMS)
-    
+
+    print('Created {} training examples (pre-augmentation'.format(len(trainData['training'])))
+          
     # parse one audio file to get types and dimensions
     tmpfeatures = util.doMFCC(trainData['training'][0]['data'], PARAMS)
     nsteps  = tmpfeatures.shape[0]
@@ -78,7 +79,8 @@ if __name__ == '__main__':
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
         #logits     = models.staticLSTM(batch_data, noutputs, 50)
-        logits      = models.staticGRUBlock(batch_data, noutputs, 50)        
+        #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
+        logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')

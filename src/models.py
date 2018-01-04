@@ -42,3 +42,18 @@ def staticGRUBlock(batch_data, noutputs, nhidden):
     fc1   =  tf.layers.dense(states, nhidden)
     logits = tf.layers.dense(fc1, noutputs)
     return logits
+
+
+def staticGRUBlockDeep(batch_data, noutputs, nhidden):
+    X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
+    layers = [tf.contrib.rnn.GRUBlockCellV2(num_units=nhidden) for l in range(2)]
+    multilayer_cell = tf.contrib.rnn.MultiRNNCell(layers) 
+    output_seqs, states = tf.contrib.rnn.static_rnn(multilayer_cell, X_seqs, dtype=tf.float32)
+    flat_states = tf.stack(states, axis=1)
+    flat_states = tf.reshape(flat_states, [-1,2*nhidden])
+    
+    fc1   =  tf.layers.dense(flat_states, nhidden)
+    logits = tf.layers.dense(fc1, noutputs)
+    return logits
+    
+    

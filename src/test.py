@@ -36,7 +36,7 @@ PARAMS = {
 def datasetTestBuildDataset(audioPath):
     dataset = []
     testFiles = listdir(audioPath)
-    for fname in testFiles[:100]:
+    for fname in testFiles:
         fpath = join(audioPath, fname)        
         if not(fname.endswith('.wav') and isfile(fpath)):
             continue
@@ -94,7 +94,8 @@ if __name__ == '__main__':
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
         #logits      = models.staticLSTM(batch_data, noutputs, 50)
-        logits      = models.staticGRUBlock(batch_data, noutputs, 50)        
+        #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
+        logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')

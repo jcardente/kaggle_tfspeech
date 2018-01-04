@@ -19,5 +19,26 @@ def staticLSTM(batch_data, noutputs, nhidden):
     output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
     flat_states = tf.stack(states, axis=1)
     flat_states = tf.reshape(flat_states, [-1,2*nhidden])
-    logits = tf.layers.dense(flat_states, noutputs)
+    fc1   =  tf.layers.dense(flat_states, nhidden)
+    logits = tf.layers.dense(fc1, noutputs)
+    return logits
+
+def staticLSTMBlock(batch_data, noutputs, nhidden):
+    X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
+    basic_cell = tf.contrib.rnn.LSTMBlockCell(num_units=nhidden, use_peephole=True)
+    output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
+    flat_states = tf.stack(states, axis=1)
+    flat_states = tf.reshape(flat_states, [-1,2*nhidden])
+    fc1   =  tf.layers.dense(flat_states, nhidden)
+    logits = tf.layers.dense(fc1, noutputs)
+    return logits
+
+def staticGRUBlock(batch_data, noutputs, nhidden):
+    X_seqs = tf.unstack(tf.transpose(batch_data, perm=[1,0,2]))
+    basic_cell = tf.contrib.rnn.GRUBlockCellV2(num_units=nhidden)
+    output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
+    #flat_states = tf.stack(states, axis=1)
+    #flat_states = tf.reshape(flat_states, [-1,2*nhidden])
+    fc1   =  tf.layers.dense(states, nhidden)
+    logits = tf.layers.dense(fc1, noutputs)
     return logits

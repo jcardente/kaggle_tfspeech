@@ -3,9 +3,11 @@ import re
 import hashlib
 from os import listdir
 from os.path import join, isfile, isdir
+import math
+import random
 import numpy as np
 import wave
-from scipy.signal import hanning
+#from scipy.signal import hanning
 from python_speech_features import mfcc
 import matplotlib.pyplot as plt
 import matplotlib.ticker
@@ -62,67 +64,153 @@ def which_set(filename, validation_percentage, testing_percentage):
     return result 
 
 
-def datasetBuildIndex(audioPath, validationPercentage):
-    labels = ['unknown', 'silence']
-    labels.extend([x for x in listdir(audioPath) if isdir(join(audioPath,x)) and x[0] != '_'])
-    datasets = {'training': [],
-                'testing': [],
-                'validation': [],
-                '_background_noise_': []}
+def dataTrainIndex(audioPath, targetWords, PARAMS):
+    index = {'targets': {'training': [], 'validation': [], 'testing': []},
+             'unknown': {'training': [], 'validation': [], 'testing': []}}
     for label in listdir(audioPath):
         if (not isdir(join(audioPath,label))):
             continue
 
+        if label == '_background_noise_':
+            continue
         
         labelPath = join(audioPath,label)
         for fname in listdir(join(audioPath,label)):
             fpath = join(labelPath, fname)
             if not(fname.endswith('.wav') and isfile(fpath)):
                 continue
-            
+
             # Train or Validation?
-            if  label != '_background_noise_':
-                setname = which_set(fname, validationPercentage, 0)
-                label_val = labels.index(label)
-            else:
-                setname = label
-                label_val = -1
-
-            datasets[setname].append({'label': label_val, 'file':fpath})
+            setname  = which_set(fname, PARAMS['validationPercentage'], 0)
+            typename = 'targets' if label in targetWords else 'unknown'
+            index[typename][setname].append({'label': label, 'file':fpath})
                 
-    return labels, datasets
+    return index
 
 
-def datasetLoadData(datasets):
-    for setname in datasets.keys():
-        isBackground = setname == '_background_noise_'
-        for entry in datasets[setname]:
+def dataTrainBuild(index, labels, PARAMS):
+    trainData = {}
+    l2i = {l:i for i,l in enumerate(labels)}
+    for setname in index['targets'].keys():
+        trainData[setname] = index['targets'][setname][:]
+        if PARAMS['trainLimitInput']:
+            # When testing input pipeline code, don't load the full
+            # training data set
+            trainData[setname] = trainData[setname][:PARAMS['trainLimitInput']]
+            
+        for entry in trainData[setname]:
+            entry['label'] = l2i[entry['label']]
+
+
+        setsize = len(trainData[setname])
+        unksize = int(math.ceil(setsize * PARAMS['unknownPercentage'] / 100))
+        silsize = int(math.ceil(setsize * PARAMS['silencePercentage'] / 100))
+        
+        random.shuffle(index['unknown'][setname])
+        unks = index['unknown'][setname][:unksize]
+        unkLabel = l2i['unknown']
+        for unk in unks:
+            unk['label'] = unkLabel
+        trainData[setname].extend(unks)
+
+        silLabel = l2i['silence']
+        sils = [{'label': silLabel, 'file': PARAMS['silenceFileName']}] * silsize
+        trainData[setname].extend(sils)
+
+        random.shuffle(trainData[setname])
+        
+    return trainData
+
+
+def dataTrainLoad(trainData, PARAMS):
+    numSamples = PARAMS['numSamples']
+    for setname in trainData.keys():
+        for entry in trainData[setname]:
             fname = entry['file']
-            data, samprate = readWavFile(fname)
+            data  = []
+            if fname != PARAMS['silenceFileName']:
+                data, samprate = readWavFile(fname)
+            else:
+                data = np.zeros((numSamples,1))
 
-            if not isBackground:
-                # NB - some audio files are less than one second long
-                #      pad or truncate as necessary
-               if len(data) < samprate:
-                   pad = np.zeros((samprate,1))
-                   start = (len(pad)-len(data))//2
-                   pad[start:start+len(data)] = data
-                   data = pad
+            # NB - some audio files are not exactly one second long
+            #      pad or truncate as necessary
+            if len(data) < numSamples:
+               pad = np.zeros((numSamples,1))
+               start = (len(pad)-len(data))//2
+               pad[start:start+len(data)] = data
+               data = pad
 
-               if len(data) > samprate:
-                   start = (len(data) - samprate)//2
-                   data = data[start:start+samprate]
+            if len(data) > numSamples:
+               start = (len(data) - numSamples)//2
+               data = data[start:start+numSamples]
 
-            entry['data'] = data
-            entry['samprate'] = samprate
+            entry['data']     = data
+            entry['samprate'] = numSamples
+            entry['fname']    = fname
+
+
+def dataTrainShift(data, maxShiftSamps):
+    shift = random.randint(-1*maxShiftSamps, maxShiftSamps)
+    shifted = np.zeros(data.shape)
+    if shift >= 0:
+        shifted[shift:,:] = data[:(len(data)-shift),:]
+    else:
+        shift *= -1
+        shifted[:(len(data)-shift),:] = data[shift:,:]
+    return shifted
+
+
+def dataBackgroundLoad(audioPath, PARAMS):
+    backgrounds = []
+    backgroundPath = join(audioPath, PARAMS['backgroundLabel'])
+    for fname in listdir(backgroundPath):
+        fpath = join(backgroundPath, fname)
+        if not(fname.endswith('.wav') and isfile(fpath)):
+            continue
+        data, samprate = readWavFile(fpath)
+        backgrounds.append(data)
+    return backgrounds
+
+
+def dataBackgroundMixin(data, backgrounds, PARAMS):
+    minvol = PARAMS['backgroundMinVol']
+    maxvol = PARAMS['backgroundMaxVol']
+    if len(backgrounds) == 0:
+        return data
+    bg      = random.choice(backgrounds)
+    bgstart = random.randrange(len(bg)-len(data))
+    bgvol   = random.uniform(minvol, maxvol)
+    mixed   = (1.0-bgvol)*data + bgvol*bg[bgstart:(bgstart+len(data))]
+    return mixed
     
-def makeInputGenerator(dataset):
-    def gen():
+
+def makeInputGenerator(dataset, doAugment, backgrounds, PARAMS):
+    epochData = []
+    if doAugment:
         for elem in dataset:
-            label = np.array(elem['label'], dtype=np.int16)
+            label = elem['label']
             fname = elem['file']
-            data = doMFCC(elem['data'],elem['samprate'])
-            yield fname.encode('utf-8'), label, data.astype(np.float32)
+            data  = elem['data']
+            samprate = elem['samprate']
+            data = dataTrainShift(data, PARAMS['maxShiftSamps'])
+            data = dataBackgroundMixin(data, backgrounds, PARAMS)
+            epochData.append({'file': fname, 'label': label, 'samprate': samprate, 'data': data})
+    else:
+        epochData = dataset
+        
+    def gen():
+        for elem in epochData:
+            label = np.array(elem['label'], dtype=np.int16)
+            fname = elem['file'].encode('utf-8')
+            data  = elem['data']
+            samprate = elem['samprate']
+            # if doAugment:
+            #     data = dataTrainShift(data, PARAMS['maxShiftSamps'])
+            #     data = dataBackgroundMixin(data, backgrounds, PARAMS)
+            
+            features = doMFCC(data,samprate, PARAMS)
+            yield fname, label, features.astype(np.float32)
     return gen
 
 
@@ -204,8 +292,30 @@ def plotSpectrogram(Y, framerate, framesPerWindow, overlapRate):
     cbar.set_label("Intensity (dB)")
     plt.show()
 
-def doMFCC(data, sampRate):
-    return mfcc(data, sampRate, winfunc = hanning)
+    
+def doMFCC(data, sampRate, PARAMS):
+    winlen  = PARAMS['mfccWindowLen']
+    winstep = PARAMS['mfccWindowStride']
+    numcep  = PARAMS['mfccNumCep']    
+    mfccCoefs = mfcc(data, sampRate, nfilt=2*numcep, winlen=winlen, winstep=winstep, numcep=numcep)
 
+    # NB - don't return the first MFCC coefficient
+    return mfccCoefs[:,1:]
+
+
+def plotMFCC(data, winlen, winstep, numcep):
+    t = np.arange(0,data.shape[0]) * winstep
+    c = np.arange(0,data.shape[1])
+    ax = plt.subplot(111)
+    plt.pcolormesh(t,c, data.T)
+    #plt.yscale('symlog', linthreshy=100, linscaley=0.25)
+    ax.yaxis.set_major_formatter(matplotlib.ticker.ScalarFormatter())
+    plt.xlim(0, t[-1])
+    plt.ylim(0, c[-1])
+    #plt.xlabel("Time (s)")
+    #plt.ylabel("Coeficient")
+    cbar = plt.colorbar()
+    #cbar.set_label("Intensity (dB)")
+    plt.show()
 
 

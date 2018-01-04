@@ -5,14 +5,38 @@ import argparse
 import tensorflow as tf
 import numpy as np
 import time
-import util
+from timeit import default_timer as timer
 
-batchSize = 64
+import util
+import models
+targetWords = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
+
+PARAMS = {
+    'learningRates': [0.001,0.0001],
+    'numEpochs': [14,4],
+    'batchSize': 512,    
+    'sampRate': 16000,
+    'numSamples': 16000,
+    'trainLimitInput': None,
+    'trainShuffleSize': 5000,
+    'validationPercentage': 5,
+    'unknownPercentage': 10,
+    'silencePercentage': 10,
+    'silenceFileName':   '_silence_',
+    'maxShiftSamps': int(16000/100),
+    'backgroundLabel': '_background_noise_',
+    'backgroundMinVol': 0.1,    
+    'backgroundMaxVol': 0.5,
+    'mfccWindowLen':  30.0/1000,
+    'mfccWindowStride': 10.0/1000,     
+    'mfccNumCep': 20
+    }
+
 
 def datasetTestBuildDataset(audioPath):
     dataset = []
     testFiles = listdir(audioPath)
-    for fname in testFiles:
+    for fname in testFiles[:100]:
         fpath = join(audioPath, fname)        
         if not(fname.endswith('.wav') and isfile(fpath)):
             continue
@@ -46,11 +70,44 @@ if __name__ == '__main__':
                         help='Path to store submission file')
     FLAGS, unparsed = parser.parse_known_args()
 
-
     print('Loading audio data...')
     audioPath = FLAGS.audioDir
     dataset = datasetTestBuildDataset(audioPath)
 
+    ############################################################
+    # labels
+    labels = ['unknown','silence'] + targetWords
+    noutputs = len(labels)
+    
+    # parse one audio file to get types and dimensions
+    tmpfeatures = util.doMFCC(dataset[0]['data'], PARAMS)       
+    nsteps  = tmpfeatures.shape[0]
+    ninputs = tmpfeatures.shape[1]
+    
+    # build input pipeline using a generator
+    tf.reset_default_graph()
+
+    with tf.device("/gpu:0"):
+        batch_data   = tf.placeholder(tf.float32, shape=[None,nsteps,ninputs], name='batch_data')
+        batch_labels = tf.placeholder(tf.int32, shape=[None], name='batch_labels')
+        
+        #logits = dynamicRNN(batch_data, noutputs, 100)
+        #logits = models.staticRNN(batch_data, noutputs, 10)
+        #logits      = models.staticLSTM(batch_data, noutputs, 50)
+        logits      = models.staticGRUBlock(batch_data, noutputs, 50)        
+        xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
+        loss        = tf.reduce_mean(xentropy, name = "loss")
+        learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
+        optimizer   = tf.train.AdamOptimizer(learning_rate = learning_rate)
+        training_op = optimizer.minimize(loss)
+        class_probs = tf.nn.softmax(logits)
+
+        
+    with tf.device("/cpu:0"):
+        correct     = tf.nn.in_top_k(logits, batch_labels, 1)
+        accuracy    = tf.reduce_mean(tf.cast(correct, tf.float32))
+        prediction = tf.argmax(class_probs,1, name = "prediction")
+        
     # Restore model
     print('Restoring model..')
     chkpointFile = FLAGS.chkpointFile
@@ -60,46 +117,25 @@ if __name__ == '__main__':
         sys.exit(1)
 
     test_results = []              
-    saver = tf.train.import_meta_graph(metaFile)
+    saver = tf.train.Saver()
     with tf.Session() as sess:
         saver.restore(sess,chkpointFile)
-        graph = tf.get_default_graph()
-              
-        # parse one audio file to get types and dimensions
-        tmpfeatures = util.doMFCC(dataset[0]['data'], dataset[0]['samprate'])       
-        nsteps  = tmpfeatures.shape[0]
-        ninputs = tmpfeatures.shape[1]
 
-        test_gen     = util.makeInputGenerator(dataset)
-        test_data    = tf.data.Dataset.from_generator(test_gen,
-                                                       (tf.string, tf.int32, tf.float32),
-                                                       ([], [],[nsteps,ninputs]))
-        test_data    = test_data.batch(batchSize)
-
-              
-        # Reinitializable iterator
-        iterator_handle = graph.get_tensor_by_name('iterator_handle:0')              
-        test_iterator   = test_data.make_one_shot_iterator()
-        test_handle     = sess.run(test_iterator.string_handle())
-              
-        # Get the prediction handle
-        pred_op   = graph.get_operation_by_name("predicted_classes")
-        clipnames = graph.get_tensor_by_name("clipnames:0")
-        #classLabels = graph.get_tensor_by_name("class_labels:0")
         print('Starting predictions...')
-        count = 0
-        while True:
-              try:
-                  pred, names = sess.run([pred_op.outputs[0], clipnames], feed_dict={iterator_handle: test_handle})
-                  names = [basename(n.decode('utf-8')) for n in names]
-                  pred  = [c.decode('utf-8') for c in pred]
+        batchCount = 0
+        batchReportInterval = 10
+        timeStart = timer()
+        for batch in util.inputGenerator(dataset, False, None, PARAMS):
+            batchPredictions = sess.run(prediction, feed_dict={batch_data: batch['features']})
+            names = [basename(n.decode('utf-8')) for n in batch['files']]
+            pred  = [labels[c] for c in batchPredictions]
 
-                  test_results.extend([(n,p) for n,p in zip(names, pred)])
-                  count += 1
-                  if (count % 1000) == 0:
-                     print("    {}  batches completed".format(count))
-              except tf.errors.OutOfRangeError:
-                  break
+            test_results.extend([(n,p) for n,p in zip(names, pred)])
+            batchCount += 1
+            if (batchCount % batchReportInterval) == 0:
+                timeEnd = timer()
+                inferRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)                
+                print("Batch {}  Rate {:.2f}".format(batchCount, inferRate))
 
     subFile =  splitext(basename(chkpointFile))[0] + "_sub_" + time.strftime('%Y%m%d_%H%M%S') + '.csv'
     of = open(join(FLAGS.outputPath, subFile),'w')

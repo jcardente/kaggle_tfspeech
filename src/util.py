@@ -147,7 +147,7 @@ def dataTrainLoad(trainData, PARAMS):
 
             entry['data']     = data
             entry['samprate'] = numSamples
-            entry['fname']    = fname
+            #entry['file']    = fname
 
 
 def dataTrainShift(data, maxShiftSamps):
@@ -185,7 +185,10 @@ def dataBackgroundMixin(data, backgrounds, PARAMS):
     return mixed
     
 
-def makeInputGenerator(dataset, doAugment, backgrounds, PARAMS):
+def inputGenerator(dataset, doAugment, backgrounds, PARAMS):
+    # NB - since everything fits in memory, precompute all the
+    #      augmentations. This can be moved into the generator
+    #      loop if memory consumption becomes an issue.
     epochData = []
     if doAugment:
         for elem in dataset:
@@ -198,23 +201,19 @@ def makeInputGenerator(dataset, doAugment, backgrounds, PARAMS):
             epochData.append({'file': fname, 'label': label, 'samprate': samprate, 'data': data})
     else:
         epochData = dataset
-        
-    def gen():
-        for elem in epochData:
-            label = np.array(elem['label'], dtype=np.int16)
-            fname = elem['file'].encode('utf-8')
-            data  = elem['data']
-            samprate = elem['samprate']
-            # if doAugment:
-            #     data = dataTrainShift(data, PARAMS['maxShiftSamps'])
-            #     data = dataBackgroundMixin(data, backgrounds, PARAMS)
+
+    epochSize  = len(epochData)
+    batchStart = 0
+    batchSize  = PARAMS['batchSize'] 
+
+    while batchStart < epochSize:
+        batch = epochData[batchStart:(batchStart+batchSize)]
+        batchStart += batchSize            
+        labels   = [np.array(e['label'], dtype=np.int32) for e in batch]
+        fnames   = [e['file'].encode('utf-8') for e in batch]
+        features = np.stack([doMFCC(e['data'], PARAMS) for e in batch])            
+        yield {'files': fnames, 'labels': labels, 'features': features.astype(np.float32)}
             
-            features = doMFCC(data,samprate, PARAMS)
-            yield fname, label, features.astype(np.float32)
-    return gen
-
-
-
             
 # Wav preprocessing code heavily inspired by
 # https://github.com/le1ca/spectrogram
@@ -293,10 +292,11 @@ def plotSpectrogram(Y, framerate, framesPerWindow, overlapRate):
     plt.show()
 
     
-def doMFCC(data, sampRate, PARAMS):
+def doMFCC(data, PARAMS):
     winlen  = PARAMS['mfccWindowLen']
     winstep = PARAMS['mfccWindowStride']
-    numcep  = PARAMS['mfccNumCep']    
+    numcep  = PARAMS['mfccNumCep']
+    sampRate = PARAMS['numSamples']
     mfccCoefs = mfcc(data, sampRate, nfilt=2*numcep, winlen=winlen, winstep=winstep, numcep=numcep)
 
     # NB - don't return the first MFCC coefficient

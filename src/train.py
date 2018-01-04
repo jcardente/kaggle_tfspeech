@@ -13,26 +13,15 @@ import models
 
 FLAGS = None
 
-# DEFAULT PARAMETERS
-# framesPerWindow      = 512
-# overlapRate          = 4
-# numSamples           = 16000
-# validationPercentage = 5
-# unknownPercentage    = 10
-# silencePercentage    = 10
-# numEpochs            = 8
-# learningRate         = 0.001
-# batchSize            = 64
 targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
 PARAMS = {
-#    'numEpochs': 8,
     'learningRates': [0.001,0.0001],
-    'numEpochs': [14,4],
+    'numEpochs': [2,2],
     'batchSize': 512,    
     'sampRate': 16000,
     'numSamples': 16000,
-    'trainLimitInput': None,
+    'trainLimitInput': 100,
     'trainShuffleSize': 5000,
     'validationPercentage': 5,
     'unknownPercentage': 10,
@@ -47,12 +36,18 @@ PARAMS = {
     'mfccNumCep': 20
     }
 
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('-d',type=str, default='./data/train/audio',
                         dest='audioDir',
                         help='Directory containing audio files')
+    parser.add_argument('--nocheck',
+                        action='store_true',
+                        default=False,
+                        dest='noCheck',
+                        help='Dont save a checkpoint')
     FLAGS, unparsed = parser.parse_known_args()
 
     # labels
@@ -61,57 +56,28 @@ if __name__ == '__main__':
     
     # Build training data set
     audioPath = FLAGS.audioDir
-    print('Indexing datasets.....')
+    print('Indexing and loading audio data.....')
     trainIndex = util.dataTrainIndex(audioPath, targetWords, PARAMS) 
     trainData  = util.dataTrainBuild(trainIndex, labels, PARAMS) 
-
-    print('Loading audio data...')
     util.dataTrainLoad(trainData, PARAMS)
     backgrounds = util.dataBackgroundLoad(audioPath, PARAMS)
     
     # parse one audio file to get types and dimensions
-    #tmpspectro, _ = util.calcSpectrogram(datasets['training'][0][1], framesPerWindow, overlapRate)
-    #tmpspectro, _ = util.calcMFCC(datasets['training'][0]['file'])
-    tmpfeatures = util.doMFCC(trainData['training'][0]['data'], trainData['training'][0]['samprate'], PARAMS)
+    tmpfeatures = util.doMFCC(trainData['training'][0]['data'], PARAMS)
     nsteps  = tmpfeatures.shape[0]
     ninputs = tmpfeatures.shape[1]
     
     # build input pipeline using a generator
     tf.reset_default_graph()
-
-    with tf.device("/cpu:0"):
-        # Store labels in graph for inference
-        class_labels = tf.constant(labels, dtype=tf.string, name="class_labels")
-        
-        # Training data set
-        train_gen     = util.makeInputGenerator(trainData['training'], True, backgrounds, PARAMS)
-        train_data    = tf.data.Dataset.from_generator(train_gen,
-                                                       (tf.string, tf.int32, tf.float32),
-                                                       ([],[],[nsteps,ninputs]))
-        #train_data    = train_data.shuffle(buffer_size=PARAMS['trainShuffleSize'])
-        train_data    = train_data.prefetch(PARAMS['trainShuffleSize'])
-        train_data    = train_data.batch(PARAMS['batchSize'])
-
-        # Validation data set
-        #val_gen     = makeInputGenerator(datasets['validation'])
-        val_gen     = util.makeInputGenerator(trainData['validation'], False, None, PARAMS)
-        val_data    = tf.data.Dataset.from_generator(val_gen,
-                                                       (tf.string, tf.int32, tf.float32),
-                                                       ([], [],[nsteps,ninputs]))
-        val_data    = val_data.batch(PARAMS['batchSize'])
-
-        iterator_handle = tf.placeholder(tf.string, shape=[], name='iterator_handle')
-        iterator = tf.data.Iterator.from_string_handle(iterator_handle,train_data.output_types, train_data.output_shapes)
-        batch_fnames, batch_labels, batch_data = iterator.get_next()
-
-        train_iterator = train_data.make_initializable_iterator()
-        val_iterator   = val_data.make_initializable_iterator()
         
     # Build the model
     with tf.device("/gpu:0"):
+        batch_data   = tf.placeholder(tf.float32, shape=[None,nsteps,ninputs], name='batch_data')
+        batch_labels = tf.placeholder(tf.int32, shape=[None], name='batch_labels')
+        
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
-        #logits      = models.staticLSTM(batch_data, noutputs, 50)
+        #logits     = models.staticLSTM(batch_data, noutputs, 50)
         logits      = models.staticGRUBlock(batch_data, noutputs, 50)        
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
@@ -119,30 +85,22 @@ if __name__ == '__main__':
         optimizer   = tf.train.AdamOptimizer(learning_rate = learning_rate)
         training_op = optimizer.minimize(loss)
         class_probs = tf.nn.softmax(logits)
-
         
     with tf.device("/cpu:0"):
-        # Accuracy
-        correct     = tf.nn.in_top_k(logits, batch_labels, 1)
-        accuracy    = tf.reduce_mean(tf.cast(correct, tf.float32))
-
-        # Prediction
+        correct    = tf.nn.in_top_k(logits, batch_labels, 1)
+        accuracy   = tf.reduce_mean(tf.cast(correct, tf.float32))
         prediction = tf.argmax(class_probs,1, name = "prediction")
-        clipnames  = tf.identity(batch_fnames, name="clipnames")
-        predClasses = tf.gather(class_labels, prediction, name="predicted_classes")
-
         
     # Start session for training and validation
     saver       = tf.train.Saver()    
     init_op     = tf.global_variables_initializer()
-    batchCount = 0
+    batchCount  = 0
     batchReportInterval = 10
     epochLearningRate = 0.001
     with tf.Session() as sess:
         sess.run(init_op)
 
         # Training loop
-        train_handle = sess.run(train_iterator.string_handle())
         for epoch in range(sum(PARAMS['numEpochs'])):            
             print("Epoch " + str(epoch))
 
@@ -153,50 +111,48 @@ if __name__ == '__main__':
                     epochLearningRate = PARAMS['learningRates'][i]
                     break
             
-            sess.run(train_iterator.initializer)
             timeStart = timer()
-            while True:
-                try:
-                    _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={iterator_handle: train_handle, learning_rate: epochLearningRate})
-                    if batchCount % batchReportInterval == 0:
-                        timeEnd = timer()
-                        trainRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
-                        print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, trainRate))
-                        timeStart = timer()
-                    batchCount += 1
-                except tf.errors.OutOfRangeError:
-                    break
-        ckptName = './chkpoints/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
-        save_path = saver.save(sess, ckptName)
+            for batch in util.inputGenerator(trainData['training'],True, backgrounds, PARAMS):                
+                _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={batch_data: batch['features'], batch_labels: batch['labels'], learning_rate: epochLearningRate})
+                batchCount += 1                
+                if batchCount % batchReportInterval == 0:
+                    timeEnd = timer()
+                    trainRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
+                    print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, trainRate))
+                    timeStart = timer()
+
+
+        if not FLAGS.noCheck:
+            ckptName = './chkpoints/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
+            save_path = saver.save(sess, ckptName)
                 
         # Validation loop
         print("Starting validation....")
-        val_handle = sess.run(val_iterator.string_handle())
-        sess.run(val_iterator.initializer)
         numCorrect   = 0
         numTotal     = 0
         checkCorrect = 0
         checkTotal   = 0
-        batchCount  = 0
-        while True:
-            try:
-                batch_correct, batch_accuracy, blabels, bpreds, bclasses = sess.run([correct, accuracy, batch_labels, prediction, predClasses], feed_dict={iterator_handle: val_handle})
-                numCorrect += np.sum(batch_correct)
-                numTotal   += len(batch_correct)
-                cumAccuracy = numCorrect / numTotal
-                  
-                checkCorrect += np.sum(np.equal(blabels, bpreds))
-                checkTotal += len(bpreds)
-                checkAccuracy = checkCorrect/checkTotal                                
-                if batchCount % 10 == 0:
-                    print("Batch {} Batch Accuracy {} Accum {} Check {}".format(batchCount, batch_accuracy, cumAccuracy, checkAccuracy))
-                batchCount += 1
-            except tf.errors.OutOfRangeError:
-                break
+        batchCount   = 0
+        timeStart    = timer()        
+        for batch in util.inputGenerator(trainData['validation'],False, None, PARAMS):                
+            batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={batch_labels: batch['labels'], batch_data: batch['features']})
+            numCorrect += np.sum(batch_correct)
+            numTotal   += len(batch_correct)
+            cumAccuracy = numCorrect / numTotal
 
+            batchCount += 1            
+            if batchCount % batchReportInterval == 0:
+                timeEnd = timer()
+                valRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
+                print("Batch {} Batch Accuracy {} Accum {} Rate {:.2f}".format(batchCount, batch_accuracy, cumAccuracy, valRate))
+                timeStart = timer()
+                
             
-        print("Validation Correct: {}  Total: {} Accuracy {} Check: {}".format(numCorrect, numTotal, numCorrect/numTotal, checkCorrect/checkTotal))
-        print("Model saved to file {}".format(ckptName))
+        print("Validation Correct: {}  Total: {} Accuracy {:.2f}".format(numCorrect, numTotal, numCorrect/numTotal*100))
+        if not FLAGS.noCheck:
+            print("Model saved to file {}".format(ckptName))
+        else:
+            print("No checkpoint saved")
 
 
 

@@ -137,6 +137,7 @@ if __name__ == '__main__':
                 timeEnd = timer()
                 inferRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)                
                 print("Batch {}  Rate {:.2f}".format(batchCount, inferRate))
+                timeStart = timer()
 
     subFile =  splitext(basename(chkpointFile))[0] + "_sub_" + time.strftime('%Y%m%d_%H%M%S') + '.csv'
     of = open(join(FLAGS.outputPath, subFile),'w')

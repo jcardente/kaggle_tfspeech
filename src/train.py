@@ -17,7 +17,7 @@ targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off',
 
 PARAMS = {
     'learningRates': [0.001,0.0001],
-    'numEpochs': [1,1],
+    'numEpochs': [14,4],
     'batchSize': 512,    
     'sampRate': 16000,
     'numSamples': 16000,
@@ -80,7 +80,8 @@ if __name__ == '__main__':
         #logits = models.staticRNN(batch_data, noutputs, 10)
         #logits     = models.staticLSTM(batch_data, noutputs, 50)
         #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
-        logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
+        #logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
+        logits  = models.convRnnHybrid(batch_data, noutputs, 50)        
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
@@ -99,6 +100,7 @@ if __name__ == '__main__':
     batchCount  = 0
     batchReportInterval = 10
     epochLearningRate = 0.001
+    trainTimeStart = timer()
     with tf.Session() as sess:
         sess.run(init_op)
 
@@ -149,8 +151,9 @@ if __name__ == '__main__':
                 print("Batch {} Batch Accuracy {} Accum {} Rate {:.2f}".format(batchCount, batch_accuracy, cumAccuracy, valRate))
                 timeStart = timer()
                 
-            
-        print("Validation Correct: {}  Total: {} Accuracy {:.2f}".format(numCorrect, numTotal, numCorrect/numTotal*100))
+
+        trainTimeEnd = timer()
+        print("Validation Correct: {}  Total: {} Accuracy {:.2f} Total Time {:.2f}m".format(numCorrect, numTotal, numCorrect/numTotal*100, (trainTimeEnd-trainTimeStart)/60))
         if not FLAGS.noCheck:
             print("Model saved to file {}".format(ckptName))
         else:

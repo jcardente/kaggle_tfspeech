@@ -22,7 +22,7 @@ PARAMS = {
     'sampRate': 16000,
     'numSamples': 16000,
     'trainLimitInput': None,
-    'validationPercentage': 5,
+    'validationPercentage': 0,
     'unknownPercentage': 10,
     'silencePercentage': 10,
     'silenceFileName':   '_silence_',
@@ -32,7 +32,9 @@ PARAMS = {
     'backgroundMaxVol': 0.5,
     'mfccWindowLen':  30.0/1000,
     'mfccWindowStride': 10.0/1000,     
-    'mfccNumCep': 20
+    'mfccNumCep': 20,
+    'mfccLowHz': 300,
+    'mfccHighHz': 3400
     }
 
 

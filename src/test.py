@@ -18,8 +18,7 @@ PARAMS = {
     'sampRate': 16000,
     'numSamples': 16000,
     'trainLimitInput': None,
-    'trainShuffleSize': 5000,
-    'validationPercentage': 5,
+    'validationPercentage': 0,
     'unknownPercentage': 10,
     'silencePercentage': 10,
     'silenceFileName':   '_silence_',
@@ -29,7 +28,9 @@ PARAMS = {
     'backgroundMaxVol': 0.5,
     'mfccWindowLen':  30.0/1000,
     'mfccWindowStride': 10.0/1000,     
-    'mfccNumCep': 20
+    'mfccNumCep': 20,
+    'mfccLowHz': 300,
+    'mfccHighHz': 3400
     }
 
 
@@ -96,7 +97,8 @@ if __name__ == '__main__':
         #logits      = models.staticLSTM(batch_data, noutputs, 50)
         #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
         #logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
-        logits  = models.convRnnHybrid(batch_data, noutputs, 50)                
+        #logits  = models.convRnnHybrid(batch_data, noutputs, 50)
+        logits  = models.conv1DRnn(batch_data, noutputs, 32)        
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')

@@ -296,7 +296,10 @@ def doMFCC(data, PARAMS):
     winstep = PARAMS['mfccWindowStride']
     numcep  = PARAMS['mfccNumCep']
     sampRate = PARAMS['numSamples']
-    mfccCoefs = mfcc(data, sampRate, nfilt=2*numcep, winlen=winlen, winstep=winstep, numcep=numcep)
+    lowhz    = PARAMS['mfccLowHz']
+    highhz   = PARAMS['mfccHighHz']
+    mfccCoefs = mfcc(data, sampRate, nfilt=2*numcep, winlen=winlen,
+                     winstep=winstep, numcep=numcep, lowfreq=lowhz, highfreq=highhz)
 
     # NB - don't return the first MFCC coefficient
     return mfccCoefs[:,1:]

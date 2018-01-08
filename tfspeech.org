@@ -14,7 +14,8 @@ Useful links
 - https://stackoverflow.com/questions/46917588/restoring-a-tensorflow-model-that-uses-iterators
 - http://cv-tricks.com/tensorflow-tutorial/save-restore-tensorflow-models-quick-complete-tutorial/
 - https://www.tensorflow.org/versions/master/tutorials/audio_recognition
-- http://www.isca-speech.org/archive/interspeech_2015/papers/i15_1478.pdf
+- http://www.isca-speech.org/archive/interspeech_2015/papers/i15_1478.pdf 
+- http://ruishu.io/2016/12/27/batchnorm/
 
 * Notes
 ** <2017-12-15 Fri> Pre-processing audio

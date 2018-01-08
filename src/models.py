@@ -78,3 +78,33 @@ def convRnnHybrid(batch_data, noutputs, nhidden):
     logits = tf.layers.dense(fc1, noutputs)
     return logits
     
+
+def conv1DRnn(batch_data, noutputs, nhidden):
+    conv1 = tf.layers.conv1d(batch_data, kernel_size=3, filters=64, strides=1, padding="valid",
+                             activation=None,
+                             kernel_initializer=tf.contrib.layers.xavier_initializer())
+    #conv1 = tf.layers.batch_normalization(conv1, training=isTraining, momentum=0.9)
+    conv1 = tf.nn.relu(conv1)
+    
+    conv2 = tf.layers.conv1d(conv1, kernel_size=3, filters=64, strides=1, padding="valid",
+                             activation=None,
+                             kernel_initializer=tf.contrib.layers.xavier_initializer())
+    #conv2 = tf.layers.batch_normalization(conv2, training=isTraining, momentum=0.9)
+    conv2 = tf.nn.relu(conv2)
+    
+    conv3 = tf.layers.conv1d(conv2, kernel_size=3, filters=128, strides=1, padding="valid",
+                             activation=None,
+                             kernel_initializer=tf.contrib.layers.xavier_initializer())
+    #conv3 = tf.layers.batch_normalization(conv3, training=isTraining, momentum=0.9)
+    conv3 = tf.nn.relu(conv3)
+
+    X_seqs = tf.unstack(tf.transpose(conv3, perm=[1,0,2]))
+    basic_cell = tf.contrib.rnn.GRUBlockCellV2(num_units=nhidden)
+    output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
+    #flat_states = tf.stack(states, axis=1)
+    #flat_states = tf.reshape(flat_states, [-1,2*nhidden])
+    
+    fc1   =  tf.layers.dense(states, nhidden)
+    logits = tf.layers.dense(fc1, noutputs)
+    return logits
+    

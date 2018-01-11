@@ -1,10 +1,10 @@
 'learningRates': [0.001,0.0001]
-'numEpochs': [14,4]
+'numEpochs': [30,10]
 'batchSize': 512   
 'sampRate': 16000
 'numSamples': 16000
 'trainLimitInput': 0
-'validationPercentage': 10
+'validationPercentage': 0
 'unknownPercentage': 10
 'silencePercentage': 10
 'silenceFileName':   '_silence_'

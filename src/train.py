@@ -149,29 +149,31 @@ if __name__ == '__main__':
             save_path = saver.save(sess, chkpointFullName)
                 
         # Validation loop
-        print("Starting validation....")
-        numCorrect   = 0
-        numTotal     = 0
-        checkCorrect = 0
-        checkTotal   = 0
-        batchCount   = 0
-        timeStart    = timer()        
-        for batch in util.inputGenerator(trainData['validation'],False, None, PARAMS):                
-            batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={batch_labels: batch['labels'], batch_data: batch['features'], isTraining:0})
-            numCorrect += np.sum(batch_correct)
-            numTotal   += len(batch_correct)
-            cumAccuracy = numCorrect / numTotal
+        if PARAMS['validationPercentage'] > 0:
+            print("Starting validation....")
+            numCorrect   = 0
+            numTotal     = 0
+            checkCorrect = 0
+            checkTotal   = 0
+            batchCount   = 0
+            timeStart    = timer()        
+            for batch in util.inputGenerator(trainData['validation'],False, None, PARAMS):                
+                batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={batch_labels: batch['labels'], batch_data: batch['features'], isTraining:0})
+                numCorrect += np.sum(batch_correct)
+                numTotal   += len(batch_correct)
+                cumAccuracy = numCorrect / numTotal
 
-            batchCount += 1            
-            if batchCount % batchReportInterval == 0:
-                timeEnd = timer()
-                valRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
-                print("Batch {} Batch Accuracy {} Accum {} Rate {:.2f}".format(batchCount, batch_accuracy, cumAccuracy, valRate))
-                timeStart = timer()
-                
+                batchCount += 1            
+                if batchCount % batchReportInterval == 0:
+                    timeEnd = timer()
+                    valRate = float(batchReportInterval* PARAMS['batchSize']) / (timeEnd - timeStart)
+                    print("Batch {} Batch Accuracy {} Accum {} Rate {:.2f}".format(batchCount, batch_accuracy, cumAccuracy, valRate))
+                    timeStart = timer()
 
-        trainTimeEnd = timer()
-        print("Validation Correct: {}  Total: {} Accuracy {:.2f} Total Time {:.2f}m".format(numCorrect, numTotal, numCorrect/numTotal*100, (trainTimeEnd-trainTimeStart)/60))
+
+            trainTimeEnd = timer()
+            print("Validation Correct: {}  Total: {} Accuracy {:.2f} Total Time {:.2f}m".format(numCorrect, numTotal, numCorrect/numTotal*100, (trainTimeEnd-trainTimeStart)/60))
+            
         if not FLAGS.noCheck:
             print("Model saved to file {}".format(chkpointFullName))
         else:

@@ -7,7 +7,8 @@ import tensorflow as tf
 import numpy as np
 import time
 from timeit import default_timer as timer
-
+import os
+import yaml
 import util
 import models
 
@@ -15,28 +16,27 @@ FLAGS = None
 
 targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
-PARAMS = {
-    'learningRates': [0.001,0.0001],
-    'numEpochs': [14,4],
-    'batchSize': 512,    
-    'sampRate': 16000,
-    'numSamples': 16000,
-    'trainLimitInput': None,
-    'validationPercentage': 0,
-    'unknownPercentage': 10,
-    'silencePercentage': 10,
-    'silenceFileName':   '_silence_',
-    'maxShiftSamps': int(16000/100),
-    'backgroundLabel': '_background_noise_',
-    'backgroundMinVol': 0.1,    
-    'backgroundMaxVol': 0.5,
-    'mfccWindowLen':  30.0/1000,
-    'mfccWindowStride': 10.0/1000,     
-    'mfccNumCep': 20,
-    'mfccLowHz': 300,
-    'mfccHighHz': 3400
-    }
-
+# PARAMS = {
+#     'learningRates': [0.001,0.0001],
+#     'numEpochs': [14,4],
+#     'batchSize': 512,    
+#     'sampRate': 16000,
+#     'numSamples': 16000,
+#     'trainLimitInput': 100,
+#     'validationPercentage': 10,
+#     'unknownPercentage': 10,
+#     'silencePercentage': 10,
+#     'silenceFileName':   '_silence_',
+#     'maxShiftSamps': int(16000/100),
+#     'backgroundLabel': '_background_noise_',
+#     'backgroundMinVol': 0.1,    
+#     'backgroundMaxVol': 0.5,
+#     'mfccWindowLen':  30.0/1000,
+#     'mfccWindowStride': 10.0/1000,     
+#     'mfccNumCep': 40,
+#     'mfccLowHz': 300,
+#     'mfccHighHz': 3400
+#     }
 
 if __name__ == '__main__':
 
@@ -44,6 +44,12 @@ if __name__ == '__main__':
     parser.add_argument('-d',type=str, default='./data/train/audio',
                         dest='audioDir',
                         help='Directory containing audio files')
+    parser.add_argument('-p', type=str, default='./params.yml',
+                        dest='paramFile',
+                        help='Parameter file')
+    parser.add_argument('-c', type=str, default='./chkpoints',
+                        dest='chkpointDir',
+                        help='Directory to store checkpoints')
     parser.add_argument('--nocheck',
                         action='store_true',
                         default=False,
@@ -51,6 +57,8 @@ if __name__ == '__main__':
                         help='Dont save a checkpoint')
     FLAGS, unparsed = parser.parse_known_args()
 
+    PARAMS = yaml.load(open(FLAGS.paramFile,'r'))
+    
     # labels
     labels = ['unknown','silence'] + targetWords
     noutputs = len(labels)
@@ -72,24 +80,30 @@ if __name__ == '__main__':
     
     # build input pipeline using a generator
     tf.reset_default_graph()
-        
+
+    isTraining = tf.placeholder(tf.bool, name='istraining')
+    
     # Build the model
     with tf.device("/gpu:0"):
         batch_data   = tf.placeholder(tf.float32, shape=[None,nsteps,ninputs], name='batch_data')
-        batch_labels = tf.placeholder(tf.int32, shape=[None], name='batch_labels')
-        
+        batch_labels = tf.placeholder(tf.int32, shape=[None], name='batch_labels')        
         #logits = dynamicRNN(batch_data, noutputs, 100)
         #logits = models.staticRNN(batch_data, noutputs, 10)
         #logits     = models.staticLSTM(batch_data, noutputs, 50)
         #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
         #logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
         #logits  = models.convRnnHybrid(batch_data, noutputs, 50)
-        logits  = models.conv1DRnn(batch_data, noutputs, 32)
+        #logits  = models.conv1DRnn(batch_data, noutputs, 32)
+        logits      = models.conv2DRnn(batch_data, noutputs, 50, isTraining)        
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
         optimizer   = tf.train.AdamOptimizer(learning_rate = learning_rate)
-        training_op = optimizer.minimize(loss)
+
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(update_ops):
+            training_op = optimizer.minimize(loss)
+            
         class_probs = tf.nn.softmax(logits)
         
     with tf.device("/cpu:0"):
@@ -120,7 +134,7 @@ if __name__ == '__main__':
             
             timeStart = timer()
             for batch in util.inputGenerator(trainData['training'],True, backgrounds, PARAMS):                
-                _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={batch_data: batch['features'], batch_labels: batch['labels'], learning_rate: epochLearningRate})
+                _ , batch_loss, batch_accuracy = sess.run([training_op, loss, accuracy], feed_dict={batch_data: batch['features'], batch_labels: batch['labels'], learning_rate: epochLearningRate, isTraining: 1})
                 batchCount += 1                
                 if batchCount % batchReportInterval == 0:
                     timeEnd = timer()
@@ -130,8 +144,9 @@ if __name__ == '__main__':
 
 
         if not FLAGS.noCheck:
-            ckptName = './chkpoints/model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
-            save_path = saver.save(sess, ckptName)
+            chkpointName = 'model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
+            chkpointFullName = os.path.join(FLAGS.chkpointDir, chkpointName)
+            save_path = saver.save(sess, chkpointFullName)
                 
         # Validation loop
         print("Starting validation....")
@@ -142,7 +157,7 @@ if __name__ == '__main__':
         batchCount   = 0
         timeStart    = timer()        
         for batch in util.inputGenerator(trainData['validation'],False, None, PARAMS):                
-            batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={batch_labels: batch['labels'], batch_data: batch['features']})
+            batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={batch_labels: batch['labels'], batch_data: batch['features'], isTraining:0})
             numCorrect += np.sum(batch_correct)
             numTotal   += len(batch_correct)
             cumAccuracy = numCorrect / numTotal
@@ -158,7 +173,7 @@ if __name__ == '__main__':
         trainTimeEnd = timer()
         print("Validation Correct: {}  Total: {} Accuracy {:.2f} Total Time {:.2f}m".format(numCorrect, numTotal, numCorrect/numTotal*100, (trainTimeEnd-trainTimeStart)/60))
         if not FLAGS.noCheck:
-            print("Model saved to file {}".format(ckptName))
+            print("Model saved to file {}".format(chkpointFullName))
         else:
             print("No checkpoint saved")
 

@@ -93,14 +93,13 @@ def dataTrainBuild(index, labels, PARAMS):
     l2i = {l:i for i,l in enumerate(labels)}
     for setname in index['targets'].keys():
         trainData[setname] = index['targets'][setname][:]
-        if PARAMS['trainLimitInput']:
+        if PARAMS['trainLimitInput'] > 0:
             # When testing input pipeline code, don't load the full
             # training data set
             trainData[setname] = trainData[setname][:PARAMS['trainLimitInput']]
             
         for entry in trainData[setname]:
             entry['label'] = l2i[entry['label']]
-
 
         setsize = len(trainData[setname])
         unksize = int(math.ceil(setsize * PARAMS['unknownPercentage'] / 100))

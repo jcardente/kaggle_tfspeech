@@ -6,37 +6,42 @@ import tensorflow as tf
 import numpy as np
 import time
 from timeit import default_timer as timer
-
+import yaml
 import util
 import models
+
 targetWords = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
 
-PARAMS = {
-    'learningRates': [0.001,0.0001],
-    'numEpochs': [14,4],
-    'batchSize': 512,    
-    'sampRate': 16000,
-    'numSamples': 16000,
-    'trainLimitInput': None,
-    'validationPercentage': 0,
-    'unknownPercentage': 10,
-    'silencePercentage': 10,
-    'silenceFileName':   '_silence_',
-    'maxShiftSamps': int(16000/100),
-    'backgroundLabel': '_background_noise_',
-    'backgroundMinVol': 0.1,    
-    'backgroundMaxVol': 0.5,
-    'mfccWindowLen':  30.0/1000,
-    'mfccWindowStride': 10.0/1000,     
-    'mfccNumCep': 20,
-    'mfccLowHz': 300,
-    'mfccHighHz': 3400
-    }
+# PARAMS = {
+#     'learningRates': [0.001,0.0001],
+#     'numEpochs': [14,4],
+#     'batchSize': 512,    
+#     'sampRate': 16000,
+#     'numSamples': 16000,
+#     'trainLimitInput': 100,
+#     'validationPercentage': 10,
+#     'unknownPercentage': 10,
+#     'silencePercentage': 10,
+#     'silenceFileName':   '_silence_',
+#     'maxShiftSamps': int(16000/100),
+#     'backgroundLabel': '_background_noise_',
+#     'backgroundMinVol': 0.1,    
+#     'backgroundMaxVol': 0.5,
+#     'mfccWindowLen':  30.0/1000,
+#     'mfccWindowStride': 10.0/1000,     
+#     'mfccNumCep': 40,
+#     'mfccLowHz': 300,
+#     'mfccHighHz': 3400
+#     }
 
 
-def datasetTestBuildDataset(audioPath):
+def datasetTestBuildDataset(audioPath,PARAMS):
     dataset = []
     testFiles = listdir(audioPath)
+
+    if PARAMS['trainLimitInput']:
+        testFiles = testFiles[:PARAMS['trainLimitInput']]
+        
     for fname in testFiles:
         fpath = join(audioPath, fname)        
         if not(fname.endswith('.wav') and isfile(fpath)):
@@ -65,15 +70,20 @@ if __name__ == '__main__':
                         dest='chkpointFile',
                         required = True,
                         help='Checkpoint filename')
+    parser.add_argument('-p', type=str, default='./params.yml',
+                        dest='paramFile',
+                        help='Parameter file')    
     parser.add_argument('-o', type=str,
                         dest='outputPath',
                         required = True,
                         help='Path to store submission file')
     FLAGS, unparsed = parser.parse_known_args()
 
+    PARAMS = yaml.load(open(FLAGS.paramFile,'r'))
+    
     print('Loading audio data...')
     audioPath = FLAGS.audioDir
-    dataset = datasetTestBuildDataset(audioPath)
+    dataset = datasetTestBuildDataset(audioPath, PARAMS)
 
     ############################################################
     # labels
@@ -88,6 +98,8 @@ if __name__ == '__main__':
     # build input pipeline using a generator
     tf.reset_default_graph()
 
+    isTraining = tf.placeholder(tf.bool, name='istraining')
+    
     with tf.device("/gpu:0"):
         batch_data   = tf.placeholder(tf.float32, shape=[None,nsteps,ninputs], name='batch_data')
         batch_labels = tf.placeholder(tf.int32, shape=[None], name='batch_labels')
@@ -98,7 +110,8 @@ if __name__ == '__main__':
         #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
         #logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
         #logits  = models.convRnnHybrid(batch_data, noutputs, 50)
-        logits  = models.conv1DRnn(batch_data, noutputs, 32)        
+        #logits  = models.conv1DRnn(batch_data, noutputs, 32)
+        logits      = models.conv2DRnn(batch_data, noutputs, 50, isTraining)                
         xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
         loss        = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
@@ -130,7 +143,7 @@ if __name__ == '__main__':
         batchReportInterval = 10
         timeStart = timer()
         for batch in util.inputGenerator(dataset, False, None, PARAMS):
-            batchPredictions = sess.run(prediction, feed_dict={batch_data: batch['features']})
+            batchPredictions = sess.run(prediction, feed_dict={batch_data: batch['features'], isTraining: 0})
             names = [basename(n.decode('utf-8')) for n in batch['files']]
             pred  = [labels[c] for c in batchPredictions]
 

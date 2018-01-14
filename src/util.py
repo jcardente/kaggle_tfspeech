@@ -195,9 +195,12 @@ def inputGenerator(dataset, doAugment, backgrounds, PARAMS):
             fname = elem['file']
             data  = elem['data']
             samprate = elem['samprate']
-            data = dataTrainShift(data, PARAMS['maxShiftSamps'])
-            data = dataBackgroundMixin(data, backgrounds, PARAMS)
-            epochData.append({'file': fname, 'label': label, 'samprate': samprate, 'data': data})
+            epochData.append({'file': fname, 'label': label, 'samprate': samprate, 'data': data})            
+            for i in range(PARAMS['augmentMultiple']):
+                augdata = dataTrainShift(data, PARAMS['maxShiftSamps'])
+                augdata = dataBackgroundMixin(data, backgrounds, PARAMS)
+                epochData.append({'file': fname, 'label': label, 'samprate': samprate, 'data': augdata})
+        random.shuffle(epochData)
     else:
         epochData = dataset
 

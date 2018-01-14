@@ -4,6 +4,7 @@
 'sampRate': 16000
 'numSamples': 16000
 'trainLimitInput': 0
+'augmentMultiple': 5
 'validationPercentage': 0
 'unknownPercentage': 10
 'silencePercentage': 10
@@ -15,5 +16,5 @@
 'mfccWindowLen':  0.03
 'mfccWindowStride': 0.01
 'mfccNumCep': 40
-'mfccLowHz': 300
+'mfccLowHz': 20
 'mfccHighHz': 3400

@@ -142,7 +142,9 @@ if __name__ == '__main__':
                     print("Batch {} loss {} accuracy {} rate {}".format(batchCount, batch_loss, batch_accuracy, trainRate))
                     timeStart = timer()
 
-
+        trainTimeEnd = timer()
+        print("Total Training Time {:.2f}m".format((trainTimeEnd-trainTimeStart)/60))
+        
         if not FLAGS.noCheck:
             chkpointName = 'model_' + time.strftime('%Y%m%d_%H%M%S') + '.ckpt'
             chkpointFullName = os.path.join(FLAGS.chkpointDir, chkpointName)
@@ -156,7 +158,8 @@ if __name__ == '__main__':
             checkCorrect = 0
             checkTotal   = 0
             batchCount   = 0
-            timeStart    = timer()        
+            valTimeStart = timer()            
+            timeStart    = valTimeStart        
             for batch in util.inputGenerator(trainData['validation'],False, None, PARAMS):                
                 batch_correct, batch_accuracy = sess.run([correct, accuracy], feed_dict={batch_labels: batch['labels'], batch_data: batch['features'], isTraining:0})
                 numCorrect += np.sum(batch_correct)
@@ -170,9 +173,9 @@ if __name__ == '__main__':
                     print("Batch {} Batch Accuracy {} Accum {} Rate {:.2f}".format(batchCount, batch_accuracy, cumAccuracy, valRate))
                     timeStart = timer()
 
+            valTimeEnd = timer()
+            print("Validation Correct: {}  Total: {} Accuracy {:.2f} Total Time {:.2f}m".format(numCorrect, numTotal, numCorrect/numTotal, (valTimeEnd-valTimeStart)/60))
 
-            trainTimeEnd = timer()
-            print("Validation Correct: {}  Total: {} Accuracy {:.2f} Total Time {:.2f}m".format(numCorrect, numTotal, numCorrect/numTotal*100, (trainTimeEnd-trainTimeStart)/60))
             
         if not FLAGS.noCheck:
             print("Model saved to file {}".format(chkpointFullName))

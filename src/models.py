@@ -141,9 +141,13 @@ def conv2DRnn(batch_data, noutputs, nhidden, isTraining):
     
     X_seqs = tf.unstack(tf.transpose(squeezed, perm=[1,0,2]))
 
-    basic_cell = tf.contrib.rnn.GRUBlockCellV2(num_units=nhidden)
+    basic_cell = tf.contrib.rnn.GRUBlockCellV2(num_units=128)
     output_seqs, states = tf.contrib.rnn.static_rnn(basic_cell, X_seqs, dtype=tf.float32)
 
-    logits = tf.layers.dense(states, noutputs)
+    fc1  = tf.layers.dense(states, 256, activation=None)
+    fc1  = tf.layers.batch_normalization(fc1, training=isTraining, momentum=0.9)
+    fc1  = tf.nn.relu(fc1)
+    
+    logits = tf.layers.dense(fc1, noutputs)
     
     return logits

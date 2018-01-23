@@ -1,7 +1,8 @@
 #------------------------------------------------------------
 # train.py
 #
-# Solution for the Kaggle TF Speech challenge
+# Training and validation for Kaggle Tensorflow speech competition
+
 import argparse
 import tensorflow as tf
 import numpy as np
@@ -13,30 +14,7 @@ import util
 import models
 
 FLAGS = None
-
 targetWords          = ['yes', 'no', 'up', 'down', 'left', 'right', 'on', 'off', 'stop', 'go']
-
-# PARAMS = {
-#     'learningRates': [0.001,0.0001],
-#     'numEpochs': [14,4],
-#     'batchSize': 512,    
-#     'sampRate': 16000,
-#     'numSamples': 16000,
-#     'trainLimitInput': 100,
-#     'validationPercentage': 10,
-#     'unknownPercentage': 10,
-#     'silencePercentage': 10,
-#     'silenceFileName':   '_silence_',
-#     'maxShiftSamps': int(16000/100),
-#     'backgroundLabel': '_background_noise_',
-#     'backgroundMinVol': 0.1,    
-#     'backgroundMaxVol': 0.5,
-#     'mfccWindowLen':  30.0/1000,
-#     'mfccWindowStride': 10.0/1000,     
-#     'mfccNumCep': 40,
-#     'mfccLowHz': 300,
-#     'mfccHighHz': 3400
-#     }
 
 if __name__ == '__main__':
 
@@ -73,32 +51,25 @@ if __name__ == '__main__':
 
     print('Created {} training examples (pre-augmentation'.format(len(trainData['training'])))
           
-    # parse one audio file to get types and dimensions
+    # NB - parse one audio file to get types and dimensions. This allows changing
+    #      the parameters without editing the model
     tmpfeatures = util.doMFCC(trainData['training'][0]['data'], PARAMS)
     nsteps  = tmpfeatures.shape[0]
     ninputs = tmpfeatures.shape[1]
     
-    # build input pipeline using a generator
-    tf.reset_default_graph()
 
+    tf.reset_default_graph()
     isTraining = tf.placeholder(tf.bool, name='istraining')
     
-    # Build the model
+
     with tf.device("/gpu:0"):
-        batch_data   = tf.placeholder(tf.float32, shape=[None,nsteps,ninputs], name='batch_data')
-        batch_labels = tf.placeholder(tf.int32, shape=[None], name='batch_labels')        
-        #logits = dynamicRNN(batch_data, noutputs, 100)
-        #logits = models.staticRNN(batch_data, noutputs, 10)
-        #logits     = models.staticLSTM(batch_data, noutputs, 50)
-        #logits      = models.staticGRUBlock(batch_data, noutputs, 50)
-        #logits = models.staticGRUBlockDeep(batch_data, noutputs, 50)
-        #logits  = models.convRnnHybrid(batch_data, noutputs, 50)
-        #logits  = models.conv1DRnn(batch_data, noutputs, 32)
-        logits      = models.conv2DRnn(batch_data, noutputs, 50, isTraining)        
-        xentropy    = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
-        loss        = tf.reduce_mean(xentropy, name = "loss")
+        batch_data    = tf.placeholder(tf.float32, shape=[None,nsteps,ninputs], name='batch_data')
+        batch_labels  = tf.placeholder(tf.int32, shape=[None], name='batch_labels')        
+        logits        = models.conv2DRnn(batch_data, noutputs, 50, isTraining)        
+        xentropy      = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=batch_labels, logits=logits)
+        loss          = tf.reduce_mean(xentropy, name = "loss")
         learning_rate = tf.placeholder(tf.float32, [], name='learning_rate')
-        optimizer   = tf.train.AdamOptimizer(learning_rate = learning_rate)
+        optimizer     = tf.train.AdamOptimizer(learning_rate = learning_rate)
 
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
@@ -111,13 +82,12 @@ if __name__ == '__main__':
         accuracy   = tf.reduce_mean(tf.cast(correct, tf.float32))
         prediction = tf.argmax(class_probs,1, name = "prediction")
         
-    # Start session for training and validation
     saver       = tf.train.Saver()    
     init_op     = tf.global_variables_initializer()
     batchCount  = 0
     batchReportInterval = 10
-    epochLearningRate = 0.001
-    trainTimeStart = timer()
+    epochLearningRate   = 0.001
+    trainTimeStart      = timer()
     with tf.Session() as sess:
         sess.run(init_op)
 
